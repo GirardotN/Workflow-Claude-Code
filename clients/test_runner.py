@@ -55,17 +55,19 @@ class TestRunner:
 
         # 2. Projet Python (pytest / unittest)
         has_python_tests = False
+        detected_test_folder = "tests"
         for test_folder in ("tests", "test"):
             tf = project_dir / test_folder
             if tf.is_dir() and any(tf.glob("*.py")):
                 has_python_tests = True
+                detected_test_folder = test_folder
                 break
 
         if has_python_tests or (project_dir / "pytest.ini").is_file() or (project_dir / "setup.cfg").is_file():
             if shutil.which("pytest"):
                 return ["pytest"]
             python_bin = shutil.which("python3") or shutil.which("python") or "python3"
-            return [python_bin, "-m", "unittest", "discover", "-s", "tests"]
+            return [python_bin, "-m", "unittest", "discover", "-s", detected_test_folder]
 
         # 3. Projet Rust (Cargo.toml)
         if (project_dir / "Cargo.toml").is_file() and shutil.which("cargo"):

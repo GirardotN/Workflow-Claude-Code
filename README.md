@@ -314,7 +314,7 @@ Options principales :
 
 ## 🧪 Tests Unitaires & Intégration Continue (CI/CD)
 
-Une suite hermétique de **24 tests unitaires** automatisés couvre l'ensemble des scénarios critiques (isolation transactionnelle, circuit breaker, Stash Guard, baseline tests, parsing lexical JSON équilibré, exécution de tests multi-écosystèmes) :
+Une suite hermétique de **27 tests unitaires** automatisés couvre l'ensemble des scénarios critiques (isolation transactionnelle, circuit breaker, Stash Guard et gestion des conflits, baseline tests avec normalisation des timings, parsing lexical JSON équilibré, détection singulier/pluriel des tests multi-écosystèmes) :
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -322,7 +322,7 @@ python3 -m unittest discover -s tests -v
 
 Résultat :
 ```text
-Ran 24 tests in 4.6s
+Ran 27 tests in 5.2s
 
 OK
 ```

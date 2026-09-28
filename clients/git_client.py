@@ -26,12 +26,12 @@ class GitClient:
     def __init__(self, project_dir: Optional[str] = None):
         self.project_dir = Path(project_dir).resolve() if project_dir else Path.cwd()
 
-    def _run_git(self, args: List[str], check: bool = True) -> str:
-        """Exécute une commande git dans le répertoire du projet."""
+    def _run_git_proc(self, args: List[str]) -> subprocess.CompletedProcess:
+        """Exécute une commande git et retourne le CompletedProcess complet."""
         cmd = ["git"] + args
         env = {**os.environ, "LC_ALL": "C"}
         try:
-            proc = subprocess.run(
+            return subprocess.run(
                 cmd,
                 cwd=str(self.project_dir),
                 capture_output=True,
@@ -39,14 +39,17 @@ class GitClient:
                 encoding="utf-8",
                 errors="replace",
                 env=env,
-                check=check,
             )
-            return proc.stdout.strip()
-        except subprocess.CalledProcessError as e:
-            err_msg = e.stderr.strip() or e.stdout.strip()
-            raise GitClientError(f"Erreur Git ({' '.join(args)}) : {err_msg}")
         except FileNotFoundError:
             raise GitClientError("Binaire 'git' introuvable dans le PATH système.")
+
+    def _run_git(self, args: List[str], check: bool = True) -> str:
+        """Exécute une commande git dans le répertoire du projet."""
+        proc = self._run_git_proc(args)
+        if check and proc.returncode != 0:
+            err_msg = proc.stderr.strip() or proc.stdout.strip()
+            raise GitClientError(f"Erreur Git ({' '.join(args)}) : {err_msg}")
+        return proc.stdout.strip()
 
     def is_git_repository(self) -> bool:
         """Vérifie si le répertoire cible est un dépôt Git valide."""
@@ -209,9 +212,17 @@ class GitClient:
     def stash_pop(self) -> bool:
         """
         Restaure les modifications préalablement mises en réserve par stash_push.
+        Alerte et gère proprement les éventuels conflits de fusion.
         """
         try:
-            out = self._run_git(["stash", "pop"], check=False)
+            proc = self._run_git_proc(["stash", "pop"])
+            combined_output = (proc.stdout + " " + proc.stderr).strip()
+            if proc.returncode != 0 or "CONFLICT" in combined_output:
+                logger.warning(
+                    f"Stash Guard : Conflit de fusion détecté lors de la restauration du stash ({combined_output[:200]}). "
+                    "Vos modifications locales sont conservées dans le stash Git."
+                )
+                return False
             logger.info("Stash Guard : Modifications locales restaurées avec succès.")
             return True
         except Exception as e:

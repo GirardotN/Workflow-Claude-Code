@@ -345,6 +345,53 @@ class TestInRepoWorkflow(unittest.TestCase):
         self.assertTrue(report.is_success)
         self.assertFalse(report.baseline_tests_passed)
 
+    def test_in_repo_baseline_tests_with_timing_jitter(self):
+        """
+        Vérifie que les variations de millisecondes ou d'horodatages dans la sortie
+        des tests ne créent pas de fausses régressions grâce à la normalisation.
+        """
+        claude = ClaudeCliClient(mock_mode=True)
+        jev = JevClient(mock_mode=True)
+
+        from clients.test_runner import TestResult, TestRunner
+
+        class JitterFailingTestRunner(TestRunner):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+
+            def run_tests(self, project_dir, custom_cmd=None):
+                self.calls += 1
+                timing = "0.42s" if self.calls == 1 else "0.89s"
+                return TestResult(
+                    passed=False,
+                    command="pytest",
+                    output=f"FAIL: tests/legacy_test.py::test_legacy_bug in {timing}",
+                    duration_seconds=0.2,
+                    returncode=1,
+                )
+
+        runner = JitterFailingTestRunner()
+        orchestrator = MultiAgentOrchestrator(
+            claude_client=claude,
+            jev_client=jev,
+            test_runner=runner,
+            project_dir=str(self.repo_path),
+            run_tests=True,
+            max_retries=2,
+        )
+
+        report = orchestrator.run("Corrige une fonction")
+        self.assertTrue(report.is_success)
+        self.assertFalse(report.baseline_tests_passed)
+
+    def test_in_repo_stash_pop_handles_conflict(self):
+        """
+        Vérifie que stash_pop gère proprement un cas de conflit ou stash vide sans crash.
+        """
+        res = self.git.stash_pop()
+        self.assertFalse(res)
+
 
 if __name__ == "__main__":
     unittest.main()

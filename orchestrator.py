@@ -55,6 +55,17 @@ LANG_TO_EXT = {
 }
 
 
+def normalize_test_output(output: str) -> str:
+    """
+    Normalise la sortie des tests en éliminant les variations de temps d'exécution
+    et de millisecondes (ex: 'in 0.42s', '45ms') pour une comparaison déterministe.
+    """
+    cleaned = re.sub(r"\b\d+(\.\d+)?\s*(s|ms|seconds?)\b", "", output, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\(duration:\s*\d+(\.\d+)?s\)", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"(\[|\()\s*\d+%\s*(\]|\))", "", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def clean_code_output(raw_code: str) -> Tuple[str, Optional[str]]:
     """
     Extrait le code source contenu dans un bloc Markdown (```<lang> ... ```)
@@ -370,7 +381,10 @@ class MultiAgentOrchestrator:
                         if test_res is not None:
                             report.tests_passed = test_res.passed
                             report.tests_output = test_res.output
-                            is_new_failure = not (baseline_failed and test_res.output == baseline_output)
+                            is_new_failure = not (
+                                baseline_failed
+                                and normalize_test_output(test_res.output) == normalize_test_output(baseline_output)
+                            )
                             if not test_res.passed and is_new_failure:
                                 logger.warning(f">>> Échec des tests du projet ({test_res.command}). Déclenchement de l'auto-correction...")
                                 dernier_feedback = (

@@ -72,6 +72,18 @@ class TestTestRunner(unittest.TestCase):
         self.assertEqual(res.returncode, 1)
         self.assertIn("AssertionError", res.output)
 
+    def test_detect_python_singular_test_dir(self):
+        """Vérifie la détection d'un projet Python avec dossier singulier test/."""
+        test_dir = self.project_path / "test"
+        test_dir.mkdir()
+        (test_dir / "test_sample.py").write_text("def test_ok(): pass\n", encoding="utf-8")
+
+        cmd = self.runner.detect_test_command(self.project_path)
+        self.assertIsNotNone(cmd)
+        if "unittest" in cmd:
+            self.assertIn("test", cmd)
+            self.assertNotIn("tests", cmd)
+
 
 if __name__ == "__main__":
     unittest.main()
