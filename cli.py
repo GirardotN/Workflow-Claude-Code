@@ -15,6 +15,17 @@ from models import StepRecord
 from orchestrator import MultiAgentOrchestrator
 
 
+# Support de l'encodage UTF-8 sous Windows (cmd.exe / PowerShell)
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+
 def setup_logging(verbose: bool):
     level = logging.DEBUG if verbose else logging.INFO
     format_str = "%(asctime)s [%(levelname)s] %(message)s"

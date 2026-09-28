@@ -37,16 +37,28 @@ def _find_claude_binary() -> str:
     if which_path:
         return which_path
 
-    # 3. Emplacements standards connus (Desktop app, global npm, user local)
+    # 3. Emplacements standards connus (Linux, macOS, Windows)
+    appdata = os.getenv("APPDATA", "")
+    localappdata = os.getenv("LOCALAPPDATA", "")
+    program_files = os.getenv("ProgramFiles", "C:\\Program Files")
+
     candidates = [
+        # Linux / macOS
         Path.home() / ".config" / "Claude" / "claude-code" / "2.1.260" / "claude",
         Path.home() / ".local" / "bin" / "claude",
         Path("/usr/local/bin/claude"),
         Path.home() / ".npm-global" / "bin" / "claude",
+        # Windows (npm global, AppData, Program Files)
+        Path(appdata) / "npm" / "claude.cmd" if appdata else None,
+        Path.home() / "AppData" / "Roaming" / "npm" / "claude.cmd",
+        Path(localappdata) / "Programs" / "Claude" / "claude.exe" if localappdata else None,
+        Path(program_files) / "nodejs" / "claude.cmd",
     ]
     for candidate in candidates:
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return str(candidate)
+        if candidate and candidate.is_file():
+            # Sur Windows os.access X_OK n'est pas fiable sur les fichiers .cmd
+            if os.name == "nt" or os.access(candidate, os.X_OK):
+                return str(candidate)
 
     return "claude"  # Par défaut, se reposer sur PATH
 
