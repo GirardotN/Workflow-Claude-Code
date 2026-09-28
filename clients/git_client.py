@@ -135,3 +135,46 @@ class GitClient:
         except Exception as e:
             logger.error(f"Échec de la création du commit Git : {e}")
             return None
+
+    def get_current_branch(self) -> str:
+        """Retourne le nom de la branche active courante."""
+        try:
+            branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"])
+            return branch.strip()
+        except Exception:
+            return "HEAD"
+
+    def create_and_checkout_branch(self, branch_name: str) -> None:
+        """Crée une nouvelle branche et bascule immédiatement dessus."""
+        logger.info(f"Création et bascule sur la branche d'isolation : {branch_name}")
+        self._run_git(["checkout", "-b", branch_name])
+
+    def checkout_branch(self, branch_name: str) -> None:
+        """Bascule sur une branche existante."""
+        logger.info(f"Bascule sur la branche : {branch_name}")
+        self._run_git(["checkout", branch_name])
+
+    def merge_branch(self, branch_to_merge: str, message: Optional[str] = None) -> bool:
+        """
+        Fusionne la branche spécifiée dans la branche courante.
+        """
+        msg = message or f"merge: intégration des modifications validées de {branch_to_merge}"
+        try:
+            self._run_git(["merge", "--no-ff", "-m", msg, branch_to_merge])
+            logger.info(f"Branche {branch_to_merge} fusionnée avec succès.")
+            return True
+        except Exception as e:
+            logger.error(f"Échec de la fusion de la branche {branch_to_merge} : {e}")
+            return False
+
+    def delete_branch(self, branch_name: str, force: bool = False) -> bool:
+        """Supprime une branche locale."""
+        flag = "-D" if force else "-d"
+        try:
+            self._run_git(["branch", flag, branch_name], check=False)
+            logger.info(f"Branche {branch_name} supprimée ({flag}).")
+            return True
+        except Exception as e:
+            logger.warning(f"Impossible de supprimer la branche {branch_name} : {e}")
+            return False
+

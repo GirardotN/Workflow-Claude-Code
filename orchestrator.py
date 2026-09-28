@@ -15,7 +15,11 @@ from typing import Callable, Optional, Tuple
 from clients.claude_cli import ClaudeCliClient, ClaudeCliError
 from clients.git_client import GitClient
 from clients.jev_client import JevClient
+from clients.test_runner import TestResult, TestRunner
 from config import (
+    DEFAULT_ALLOW_BASH,
+    DEFAULT_RUN_TESTS,
+    DEFAULT_USE_BRANCH,
     MAX_RETRIES,
     MODEL_HAIKU,
     MODEL_OPUS,
@@ -81,20 +85,30 @@ class MultiAgentOrchestrator:
         self,
         claude_client: Optional[ClaudeCliClient] = None,
         jev_client: Optional[JevClient] = None,
+        test_runner: Optional[TestRunner] = None,
         max_retries: int = MAX_RETRIES,
         workspace_dir: Optional[str] = None,
         project_dir: Optional[str] = None,
         standalone_mode: bool = False,
         auto_commit: bool = False,
+        use_branch: bool = DEFAULT_USE_BRANCH,
+        auto_merge: bool = False,
+        allow_bash: bool = DEFAULT_ALLOW_BASH,
+        run_tests: bool = DEFAULT_RUN_TESTS,
         on_step_callback: Optional[Callable[[StepRecord], None]] = None,
     ):
         self.claude = claude_client or ClaudeCliClient()
         self.jev = jev_client or JevClient()
+        self.test_runner = test_runner or TestRunner()
         self.max_retries = max_retries
         self.workspace_dir = workspace_dir
         self.project_dir = Path(project_dir).resolve() if project_dir else None
         self.standalone_mode = standalone_mode
         self.auto_commit = auto_commit
+        self.use_branch = use_branch
+        self.auto_merge = auto_merge
+        self.allow_bash = allow_bash
+        self.run_tests = run_tests
         self.on_step_callback = on_step_callback
         self.git = GitClient(self.project_dir) if self.project_dir else None
 
@@ -127,19 +141,39 @@ class MultiAgentOrchestrator:
     ) -> WorkflowExecutionReport:
         """
         Exécute le workflow en mode In-Repo :
-        1. Exploration et localisation du code cible dans project_dir (Sonnet + tools Read,Grep,Glob).
-        2. Aiguillage Jev (complexité & spécialité).
-        3. Développement in-situ modifiant directement les fichiers (Opus/Sonnet + tools Read,Edit,Write).
-        4. Capture du git diff réel.
-        5. Check Qualité sur le git diff (Jev validation/rejet + rollback git si rejet).
-        6. Check Sécurité sur le git diff (Jev validation/rejet + rollback git si rejet).
-        7. Proposition et application optionnelle du commit Git conventionnel.
+        1. Isolation sur branche temporaire dédiée (workflow/ai-*).
+        2. Exploration et localisation ciblée (filtrage node_modules, .git, .venv).
+        3. Aiguillage Jev (complexité & spécialité).
+        4. Développement in-situ modifiant directement les fichiers (outils sandboxés).
+        5. Boucle de tests automatisée (Oracle de vérité) avec auto-correction si échec.
+        6. Capture du git diff réel.
+        7. Check Qualité sur le git diff (Jev validation/rejet + rollback git si rejet).
+        8. Check Sécurité sur le git diff (Jev validation/rejet + rollback git si rejet).
+        9. Commit sémantique et fusion optionnelle sur la branche d'origine.
         """
         logger.info(f"Démarrage du workflow In-Repo dans : {self.project_dir} pour : '{prompt_simple[:60]}...'")
 
         # Vérification préalable de la propreté du dépôt
         if not self.git.is_working_tree_clean():
             logger.warning("Attention : Le répertoire de travail du projet n'est pas propre (fichiers modifiés non commités détectés).")
+
+        # -------------------------------------------------------------------------
+        # ISOLATION TRANSACTIONNELLE PAR BRANCHE GIT
+        # -------------------------------------------------------------------------
+        original_branch = "HEAD"
+        work_branch = None
+        if self.use_branch and self.git:
+            original_branch = self.git.get_current_branch()
+            report.original_branch = original_branch
+            timestamp = int(time.time())
+            work_branch = f"workflow/ai-{timestamp}"
+            try:
+                self.git.create_and_checkout_branch(work_branch)
+                report.branch_name = work_branch
+                logger.info(f"Isolation Git active : branche '{work_branch}' créée depuis '{original_branch}'.")
+            except Exception as e:
+                logger.warning(f"Impossible d'isoler sur une branche dédiée ({e}), travail sur {original_branch}")
+                work_branch = None
 
         # =========================================================================
         # ÉTAPE 1 : Exploration du Codebase & Spécification In-Situ (Sonnet)
@@ -150,6 +184,8 @@ class MultiAgentOrchestrator:
             f"Demande utilisateur : {prompt_simple}\n\n"
             "Explore le codebase à l'aide de tes outils pour localiser précisément les fichiers, "
             "fonctions ou composants concernés par cette demande.\n"
+            "IMPORTANT : Ignore impérativement les répertoires et artefacts volumineux ou générés : "
+            "node_modules, .git, dist, build, .venv, venv, __pycache__, .pytest_cache, coverage, bin, obj.\n\n"
             "Rédige une spécification technique d'implémentation in-situ complète :\n"
             "1. Fichiers et fonctions cibles identifiés (chemins relatifs précis)\n"
             "2. Analyse de l'implémentation actuelle\n"
@@ -202,8 +238,13 @@ class MultiAgentOrchestrator:
         feedback_secu_model = MODEL_SONNET if is_complexe else MODEL_HAIKU
         doc_commit_model = MODEL_SONNET if is_simple else MODEL_HAIKU
 
+        # Configuration des outils pour l'agent de développement (sandbox Bash)
+        dev_tools = "Read,Edit,Write,Grep,Glob"
+        if self.allow_bash:
+            dev_tools += ",Bash"
+
         # =========================================================================
-        # MACHINE À ÉTATS IN-REPO : DEV IN-SITU <-> QUALITÉ (DIFF) (<-> SÉCURITÉ)
+        # MACHINE À ÉTATS IN-REPO : DEV IN-SITU <-> TESTS <-> QUALITÉ (<-> SÉCURITÉ)
         # =========================================================================
         etape = "DEV"
         diff_content = ""
@@ -221,6 +262,14 @@ class MultiAgentOrchestrator:
                 logger.error(err)
                 report.error_message = err
                 report.is_success = False
+
+                # Restauration de la branche d'origine si isolation active
+                if work_branch and self.git:
+                    logger.warning(f"Restauration de la branche d'origine '{original_branch}'...")
+                    self.git.rollback()
+                    self.git.checkout_branch(original_branch)
+                    self.git.delete_branch(work_branch, force=True)
+
                 if raise_on_failure:
                     raise WorkflowMaxRetriesExceeded(err)
                 return report
@@ -245,7 +294,8 @@ class MultiAgentOrchestrator:
                 else:
                     dev_prompt = (
                         f"Tu es un expert {report.dev_specialty.value}.\n"
-                        "La modification précédente a été rejetée lors de la revue. Corrige le tir directement dans les fichiers du projet :\n\n"
+                        "La tentative précédente a rencontré un problème ou a été rejetée. "
+                        "Corrige le tir directement dans les fichiers du projet :\n\n"
                         f"CAHIER DES CHARGES :\n{spec_complexe}\n\n"
                         f"RETOURS OBLIGATOIRES À CORRIGER :\n{dernier_feedback}\n\n"
                         "Applique les corrections nécessaires dans les fichiers du projet."
@@ -256,7 +306,7 @@ class MultiAgentOrchestrator:
                     dev_prompt,
                     model=dev_model,
                     cwd=str(self.project_dir),
-                    tools="Read,Edit,Write,Grep,Glob,Bash",
+                    tools=dev_tools,
                     permission_mode="acceptEdits",
                 )
                 dur = time.perf_counter() - t0
@@ -278,6 +328,44 @@ class MultiAgentOrchestrator:
                 )
 
                 dernier_feedback = ""
+
+                # -----------------------------------------------------------------
+                # Nœud intermédiaire : BOUCLE DE TESTS AUTOMATISÉE (Oracle)
+                # -----------------------------------------------------------------
+                if self.run_tests and self.test_runner:
+                    test_res = self.test_runner.run_tests(self.project_dir)
+                    if test_res is not None:
+                        report.tests_passed = test_res.passed
+                        report.tests_output = test_res.output
+                        if not test_res.passed:
+                            logger.warning(f">>> Échec des tests du projet ({test_res.command}). Déclenchement de l'auto-correction...")
+                            dernier_feedback = (
+                                f"La modification apportée a provoqué des régressions ou des échecs dans les tests du projet.\n"
+                                f"COMMANDE DE TEST : {test_res.command}\n\n"
+                                f"TRACE D'ERREUR DES TESTS :\n{test_res.output}\n\n"
+                                "Corrige immédiatement le code dans les fichiers du projet pour que les tests réussissent."
+                            )
+                            self._record_step(
+                                report,
+                                f"TESTS_FAILED_CYCLE_{iter_count}",
+                                "test_runner",
+                                test_res.command,
+                                test_res.output,
+                                test_res.duration_seconds,
+                            )
+                            etape = "DEV"
+                            continue
+                        else:
+                            logger.info(f">>> Succès de la suite de tests ({test_res.command}) en {test_res.duration_seconds:.2f}s.")
+                            self._record_step(
+                                report,
+                                f"TESTS_PASSED_CYCLE_{iter_count}",
+                                "test_runner",
+                                test_res.command,
+                                f"Tests passés avec succès :\n{test_res.output[:300]}",
+                                test_res.duration_seconds,
+                            )
+
                 etape = "CHECK_QUALITE"
 
             # ---------------------------------------------------------------------
@@ -418,6 +506,15 @@ class MultiAgentOrchestrator:
                     break
             commit_hash = self.git.commit(f"{commit_subject}\n\n{prompt_simple}")
             report.commit_hash = commit_hash
+
+            # Fusion automatique sur la branche d'origine si demandée
+            if work_branch and self.auto_merge and original_branch != "HEAD":
+                logger.info(f"Fusion automatique de la branche {work_branch} dans {original_branch}...")
+                self.git.checkout_branch(original_branch)
+                merged = self.git.merge_branch(work_branch)
+                if merged:
+                    self.git.delete_branch(work_branch)
+                    report.branch_name = original_branch
 
         # Persistance disque si demandée
         if self.workspace_dir:

@@ -174,6 +174,89 @@ class TestInRepoWorkflow(unittest.TestCase):
         self.assertIn("FEEDBACK_QUALITE_CYCLE_1", step_names)
         self.assertIn("DEV_IN_SITU_CYCLE_2", step_names)
 
+    def test_in_repo_branch_isolation_and_merge(self):
+        """
+        Vérifie qu'avec use_branch=True et auto_merge=True, le travail
+        s'effectue sur une branche dédiée puis est fusionné dans la branche d'origine.
+        """
+        claude = ClaudeCliClient(mock_mode=True)
+        jev = JevClient(mock_mode=True)
+
+        initial_branch = self.git.get_current_branch()
+
+        orchestrator = MultiAgentOrchestrator(
+            claude_client=claude,
+            jev_client=jev,
+            project_dir=str(self.repo_path),
+            use_branch=True,
+            auto_commit=True,
+            auto_merge=True,
+        )
+
+        prompt = "Modifie la fonction de tri dans l'onglet x"
+        report = orchestrator.run(prompt)
+
+        self.assertTrue(report.is_success)
+        self.assertEqual(report.original_branch, initial_branch)
+        # Après auto-merge, on est revenu sur la branche initiale
+        current_branch = self.git.get_current_branch()
+        self.assertEqual(current_branch, initial_branch)
+
+    def test_in_repo_test_feedback_loop(self):
+        """
+        Vérifie que si la suite de tests échoue après édition, le feedback
+        d'erreur est réinjecté à Claude pour auto-correction avant la revue Jev.
+        """
+        claude = ClaudeCliClient(mock_mode=True)
+        jev = JevClient(mock_mode=True)
+
+        from clients.test_runner import TestResult, TestRunner
+
+        class MockFailingThenPassingTestRunner(TestRunner):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+
+            def run_tests(self, project_dir, custom_cmd=None):
+                self.calls += 1
+                if self.calls == 1:
+                    return TestResult(
+                        passed=False,
+                        command="npm test",
+                        output="FAIL: TypeError: Cannot read property 'date' of undefined",
+                        duration_seconds=0.1,
+                        returncode=1,
+                    )
+                return TestResult(
+                    passed=True,
+                    command="npm test",
+                    output="PASS: All 12 tests passed",
+                    duration_seconds=0.1,
+                    returncode=0,
+                )
+
+        runner = MockFailingThenPassingTestRunner()
+
+        orchestrator = MultiAgentOrchestrator(
+            claude_client=claude,
+            jev_client=jev,
+            test_runner=runner,
+            project_dir=str(self.repo_path),
+            run_tests=True,
+            max_retries=3,
+        )
+
+        prompt = "Modifie la fonction de tri dans l'onglet x"
+        report = orchestrator.run(prompt)
+
+        self.assertTrue(report.is_success)
+        self.assertTrue(report.tests_passed)
+        step_names = [s.step_name for s in report.history]
+        self.assertIn("TESTS_FAILED_CYCLE_1", step_names)
+        self.assertIn("DEV_IN_SITU_CYCLE_2", step_names)
+        self.assertIn("TESTS_PASSED_CYCLE_2", step_names)
+
 
 if __name__ == "__main__":
     unittest.main()
+

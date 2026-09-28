@@ -98,3 +98,24 @@ MODEL_HAIKU = "haiku"
 
 # Répertoire cible du projet à inspecter / modifier
 DEFAULT_PROJECT_DIR = os.getenv("PROJECT_DIR", ".")
+
+
+def load_user_config() -> dict:
+    """Charge les préférences utilisateur depuis ~/.config/workflow-claude/config.json si présent."""
+    cfg_path = Path.home() / ".config" / "workflow-claude" / "config.json"
+    if cfg_path.is_file():
+        try:
+            import json
+            return json.loads(cfg_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+_user_cfg = load_user_config()
+
+# Sécurité & Isolation par défaut
+DEFAULT_ALLOW_BASH = bool(_user_cfg.get("allow_bash", os.getenv("ALLOW_BASH", "0").lower() in ("1", "true", "yes")))
+DEFAULT_RUN_TESTS = bool(_user_cfg.get("run_tests", os.getenv("RUN_TESTS", "1").lower() in ("1", "true", "yes")))
+DEFAULT_USE_BRANCH = bool(_user_cfg.get("use_branch", os.getenv("USE_BRANCH", "1").lower() in ("1", "true", "yes")))
+

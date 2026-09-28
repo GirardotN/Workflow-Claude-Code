@@ -80,3 +80,8 @@ class WorkflowExecutionReport:
     git_diff: str = ""
     modified_files: List[str] = field(default_factory=list)
     commit_hash: Optional[str] = None
+    branch_name: Optional[str] = None
+    original_branch: Optional[str] = None
+    tests_passed: Optional[bool] = None
+    tests_output: str = ""
+

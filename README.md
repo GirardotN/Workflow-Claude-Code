@@ -140,22 +140,36 @@ flowchart TD
 
 ### 2. Guide d'Installation par Système d'Exploitation
 
-#### 🐧 Linux & 🍎 macOS
+#### 📦 Installation Recommandée (Globale via `pipx`)
+
+Grâce à `pyproject.toml`, l'orchestrateur s'installe en commande système universelle :
+
+```bash
+# 1. Cloner le dépôt
+git clone https://github.com/GirardotN/Workflow-Claude-Code.git
+cd Workflow-Claude-Code
+
+# 2. Installer globalement dans un environnement isolé sans conflit
+pipx install --editable .
+
+# 3. La commande `workflow` ou `workflow-claude` est immédiatement disponible partout !
+workflow "Modifie la fonction de tri dans l'onglet x"
+```
+
+#### 🐧 Linux & 🍎 macOS (Environnement Virtuel Classique)
 
 ```bash
 # 1. Installer et connecter Claude Code CLI
 npm install -g @anthropic-ai/claude-code
 claude auth login
 
-# 2. Cloner le dépôt
+# 2. Cloner le dépôt et créer l'environnement virtuel
 git clone https://github.com/GirardotN/Workflow-Claude-Code.git
 cd Workflow-Claude-Code
-
-# 3. Créer et activer l'environnement virtuel
 python3 -m venv venv
 source venv/bin/activate
 
-# 4. Installer les dépendances
+# 3. Installer les dépendances
 pip install -r requirements.txt
 ```
 
@@ -166,15 +180,13 @@ pip install -r requirements.txt
 npm install -g @anthropic-ai/claude-code
 claude auth login
 
-:: 2. Cloner le dépôt
+:: 2. Cloner le dépôt et créer l'environnement virtuel
 git clone https://github.com/GirardotN/Workflow-Claude-Code.git
 cd Workflow-Claude-Code
-
-:: 3. Créer et activer l'environnement virtuel
 python -m venv venv
 venv\Scripts\activate
 
-:: 4. Installer les dépendances
+:: 3. Installer les dépendances
 pip install -r requirements.txt
 ```
 
@@ -182,8 +194,9 @@ pip install -r requirements.txt
 
 ---
 
-## ⚙️ Configuration (`.env`)
+## ⚙️ Configuration (`.env` ou `config.json`)
 
+### 1. Variables d'environnement (`.env`)
 Copiez le modèle [.env.example](.env.example) vers `.env` :
 
 ```bash
@@ -191,17 +204,28 @@ cp .env.example .env     # Linux / macOS
 copy .env.example .env   # Windows
 ```
 
-Ajustez les variables selon vos besoins :
-
 | Variable | Description | Valeur par défaut |
 | :--- | :--- | :--- |
 | `TYPESAFE_API_KEY` | Clé API pour TypeSafe Jev (obtenue sur [typesafe.ai](https://typesafe.ai)) | `""` *(active le mock heuristique si vide)* |
 | `TYPESAFE_API_URL` | Endpoint officiel TypeSafe System One | `https://api.typesafe.ai/v1/systemone` |
 | `TYPESAFE_FALLBACK_URL` | Endpoint de secours TypeSafe Decide direct | `https://api.typesafe.ai/v1/decide` |
-| `CLAUDE_BIN` | Chemin absolu personnalisé vers le binaire `claude` | Détection automatique (`PATH`, AppData, npm) |
+| `CLAUDE_BIN` | Chemin absolu personnalisé vers le binaire `claude` | Détection automatique (`PATH`, version locale) |
 | `CLAUDE_TIMEOUT_SECONDS` | Délai d'expiration maximum par appel au CLI Claude | `180` |
 | `MAX_WORKFLOW_RETRIES` | Nombre maximum de cycles de feedback (Circuit Breaker) | `4` |
+| `ALLOW_BASH` | Autoriser l'outil Bash par défaut (`1` ou `0`) | `0` *(sécurité renforcée)* |
+| `USE_BRANCH` | Isoler le travail sur une branche dédiée (`1` ou `0`) | `1` *(protection de main)* |
+| `RUN_TESTS` | Exécuter la suite de tests du projet hôte (`1` ou `0`) | `1` *(oracle de vérité)* |
 | `MOCK_SERVICES` | Activer la simulation intégrale sans appel réseau/CLI (`1` ou `0`) | `0` |
+
+### 2. Préférences utilisateur (`~/.config/workflow-claude/config.json`)
+Vous pouvez également créer un fichier JSON persistant pour mémoriser vos préférences globales :
+```json
+{
+  "allow_bash": false,
+  "run_tests": true,
+  "use_branch": true
+}
+```
 
 ---
 
@@ -209,14 +233,20 @@ Ajustez les variables selon vos besoins :
 
 ### 1. Mode In-Repo sur un Projet Existant (Recommandé)
 
-Déployez l'orchestrateur directement sur une base de code existante comportant des dizaines de fichiers. L'agent explore l'arborescence, localise les fonctions ou composants cibles, applique les modifications chirurgicales in-situ et valide le résultat sur le **`git diff`** réel avec rollback automatique en cas de rejet :
+Déployez l'orchestrateur sur une base de code existante comportant des dizaines de fichiers. Le workflow :
+1. Crée une branche d'isolation `workflow/ai-<timestamp>` pour ne pas altérer votre branche active.
+2. Filtre automatiquement `node_modules`, `.git`, `.venv` pour une exploration ultra-rapide.
+3. Modifie chirurgicalement les fichiers in-situ.
+4. Lance la suite de tests du projet (`pytest`, `npm test`) et auto-corrige le code en cas d'erreur.
+5. Valide le résultat sur le `git diff` avec audit Qualité & Sécurité Jev.
+6. Propose la fusion automatique dans la branche principale.
 
 ```bash
-# Explorer le projet, modifier le fichier cible et afficher le git diff validé :
-python3 cli.py --project-dir /chemin/vers/mon-projet "Modifie la fonction de tri dans l'onglet x pour trier par date décroissante"
+# Exploration, modification in-situ et revue sur branche dédiée :
+workflow --project-dir /chemin/vers/mon-projet "Modifie la fonction de tri dans l'onglet x"
 
-# Option --commit : Appliquer automatiquement le commit conventionnel dans l'historique Git :
-python3 cli.py --project-dir /chemin/vers/mon-projet --commit "Modifie la fonction de tri dans l'onglet x pour trier par date décroissante"
+# Option --commit et --merge : Commiter et fusionner automatiquement dans la branche principale
+workflow --project-dir /chemin/vers/mon-projet --commit --merge -y "Modifie la fonction de tri dans l'onglet x"
 ```
 
 ### 2. Mode Standalone (Génération d'un fichier neuf)
@@ -224,73 +254,63 @@ python3 cli.py --project-dir /chemin/vers/mon-projet --commit "Modifie la foncti
 Pour générer un module autonome sans intervenir sur un projet existant :
 
 ```bash
-python3 cli.py --standalone "Créer un service FastAPI d'authentification JWT avec rate limiting Redis"
+workflow --standalone "Créer un service FastAPI d'authentification JWT avec rate limiting Redis"
 ```
 
 ### 3. Mode Simulation / Hors Ligne (`--mock`)
 
-Le mode `--mock` permet de tester le flux de la machine à états, le routage et les modifications in-situ localement, de façon instantanée, sans dépendre du réseau ni consommer de session CLI :
+Le mode `--mock` permet de tester le flux de la machine à états instantanément sans consommer d'appels :
 
 ```bash
-python3 cli.py --mock --project-dir /chemin/vers/mon-projet "Modifie la fonction de tri dans l'onglet x"
+workflow --mock --project-dir /chemin/vers/mon-projet "Modifie la fonction de tri dans l'onglet x"
 ```
 
 ### 4. Options de la Ligne de Commande
 
 ```text
-usage: cli.py [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT_DIR]
-              [--standalone] [--commit] [--workspace WORKSPACE] [-v] [prompt]
+usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT_DIR]
+                [--standalone] [--commit] [--branch] [--no-branch] [--merge]
+                [--allow-bash] [--run-tests] [--no-tests] [-y] [--workspace WORKSPACE] [-v]
+                [prompt]
 
-Arguments positionnels :
+Options principales :
   prompt                 Prompt simple décrivant la tâche de développement ou de refactoring
-
-Options :
-  -h, --help             Affiche l'aide et quitte
-  --mock                 Exécute le workflow en mode simulation
-  --max-retries N        Nombre maximum d'allers-retours de feedback (défaut : 4)
-  --project-dir DOSSIER  Répertoire du projet existant à modifier (active le mode In-Repo si sous Git)
-  --standalone           Forcer le mode autonome (génération d'un fichier dans output/ au lieu d'éditer le projet)
-  --commit               Créer automatiquement le commit Git conventionnel si les modifications sont validées
-  --workspace DOSSIER    Répertoire où persister le rapport d'audit et la documentation (défaut : ./output)
-  -v, --verbose          Active la journalisation détaillée (DEBUG)
+  --project-dir DOSSIER  Répertoire du projet cible (active le mode In-Repo)
+  --commit               Créer automatiquement le commit Git conventionnel après validation
+  --branch / --no-branch Isoler le travail sur une branche dédiée workflow/ai-* (défaut: activé)
+  --merge                Fusionner automatiquement la branche d'isolation dans main en cas de succès
+  --run-tests / --no-tests Exécuter la suite de tests du projet hôte (pytest, npm test, etc.)
+  --allow-bash           Autoriser l'outil Bash pour Claude (défaut: désactivé pour sécurité)
+  -y, --yes              Accepter automatiquement les confirmations sans invite interactive
+  --mock                 Exécuter en mode simulation déterministe
+  --standalone           Forcer le mode fichier unique dans output/
+  -v, --verbose          Activer les logs détaillés de débogage
 ```
 
 ---
 
 ## 📂 Artefacts Générés
 
-À la fin de chaque exécution validée, les fichiers suivants sont persistés dans le dossier spécifié (`./output` par défaut) :
+À la fin de chaque exécution validée, les fichiers suivants sont persistés dans `./output` :
 
 1. **`LATEST_PATCH.diff`** *(Mode In-Repo)* : Le patch Git exact appliqué aux fichiers du projet.
-2. **`generated_solution.<ext>`** *(Mode Standalone)* : Le code source complet produit (extension automatique : `.py`, `.ts`, `.tsx`, `.cs`).
-3. **`GENERATED_DOC.md`** : La documentation technique d'utilisation accompagnée de la proposition de message de commit Git au format *Conventional Commits*.
-4. **`WORKFLOW_AUDIT.md`** : Le journal d'audit complet retraçant chaque étape chronométrée, les modèles assignés, les fichiers modifiés et les validations accordées par Jev.
-
+2. **`generated_solution.<ext>`** *(Mode Standalone)* : Le code source complet produit.
+3. **`GENERATED_DOC.md`** : La documentation technique et le commit conventionnel proposé.
+4. **`WORKFLOW_AUDIT.md`** : Le journal d'audit chronométré de toutes les étapes et validations.
 
 ---
 
 ## 🧪 Tests Unitaires
 
-Une suite complète de tests vérifie de manière déterministe les comportements clés :
-* **Branche Simple :** Modèles Sonnet, absence d'exécution de l'audit sécurité, finalisation immédiate.
-* **Branche Moyenne :** Cycle Dev $\rightarrow$ Qualité $\rightarrow$ Sécurité, simulation d'un rejet sécurité et prise en compte du feedback Haiku.
-* **Branche Complexe :** Assignation automatique des modèles **Opus** pour le Dev et la Qualité, gestion des rejets et feedbacks Sonnet.
-* **Isolation des contextes :** Vérification que le relecteur qualité ne reçoit que le code brut, et que le relecteur sécurité reçoit le code plus la review qualité.
-* **Circuit Breaker :** Arrêt propre de l'orchestrateur lorsque la limite d'itérations est atteinte, évitant toute boucle infinie.
-
-Pour lancer les tests :
+Une suite de 20 tests unitaires automatisés couvre l'ensemble des scénarios :
 
 ```bash
-# Linux / macOS
-python3 -m unittest discover -s tests
-
-# Windows
-python -m unittest discover -s tests
+python3 -m unittest discover -s tests -v
 ```
 
-Résultat attendu :
+Résultat :
 ```text
-Ran 5 tests in 0.002s
+Ran 20 tests in 0.682s
 
 OK
 ```
