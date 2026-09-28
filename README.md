@@ -1,14 +1,17 @@
 # 🤖 Workflow-Claude-Code : Orchestrateur Multi-Agents Claude & TypeSafe Jev
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](https://github.com/GirardotN/Workflow-Claude-Code)
 [![Claude Code CLI](https://img.shields.io/badge/Claude_Code-Headless_CLI-6B46C1.svg)](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview)
 [![TypeSafe Jev](https://img.shields.io/badge/TypeSafe-Jev_System_One-00C7B7.svg)](https://typesafe.ai)
 [![Zero API Token Claude](https://img.shields.io/badge/Claude_API_Credits-0_Utilis%C3%A9-brightgreen.svg)](#-contraintes-fondamentales--z%C3%A9ro-cr%C3%A9dit-api-claude)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Orchestrateur multi-agents autonome sous forme de machine à états finis, conçu pour automatiser le cycle complet de conception logicielle (spécification, développement, audit qualité, audit sécurité, documentation et commit Git).
+Orchestrateur multi-agents autonome sous forme de machine à états finis, conçu pour automatiser le cycle complet de conception logicielle (spécification technique, développement spécialisé, contrôle qualité, audit de sécurité, documentation et message de commit Git).
 
-Le projet tire parti de la puissance des modèles **Claude** (Opus, Sonnet, Haiku) via le CLI local **Claude Code** en mode headless (`claude -p`), tout en déléguant le routage dynamique et les décisions de validation binaires au moteur décisionnel ultra-rapide **TypeSafe Jev**.
+Le projet tire parti des modèles de pointe **Claude** (Opus, Sonnet, Haiku) via le CLI local **Claude Code** en mode headless (`claude -p`), tout en déléguant le routage dynamique et les décisions de validation binaires au moteur décisionnel haute performance **TypeSafe Jev**.
+
+Le code est **100 % multiplateforme** et fonctionne de manière transparente sous **Linux**, **macOS** et **Windows**.
 
 ---
 
@@ -16,20 +19,27 @@ Le projet tire parti de la puissance des modèles **Claude** (Opus, Sonnet, Haik
 
 ### 1. Zéro crédit d'API Claude Développeur
 * **Principe :** L'utilisateur dispose d'un abonnement **Claude Max 5x** offrant un usage illimité (dans les limites de session) du CLI **Claude Code**.
-* **Implémentation :** Aucune clé `ANTHROPIC_API_KEY` n'est requise ni instanciée. Toutes les sollicitations de Claude sont exécutées via des sous-processus locaux non-interactifs (`claude -p "<prompt>" --model <model>`).
+* **Implémentation :** Aucune clé `ANTHROPIC_API_KEY` payante n'est nécessaire ni instanciée. Toutes les sollicitations de Claude sont exécutées via des sous-processus locaux non-interactifs (`claude -p "<prompt>" --model <model>`).
 
 ### 2. Aiguillage & Décisions Rapides via TypeSafe Jev
-* **Principe :** Les arbitrages fins (choix de la complexité, attribution de la spécialité technique du développeur, validation/rejet qualité et sécurité) sont confiés au modèle décisionnel **Jev** (TypeSafe System One).
-* **Avantage :** Latence minimale, format de sortie déterministe (classification ou probabilité binaire `noul`/`binary`) et économie de tokens.
+* **Principe :** Les arbitrages fins (choix du niveau de complexité, sélection de la spécialité technique du développeur, validation/rejet binaire qualité et sécurité) sont confiés au modèle décisionnel **Jev** (TypeSafe System One / Decide).
+* **Avantage :** Latence ultra-faible, format de réponse déterministe (classification `choice` ou probabilité binaire `noul`/`binary`) et économie substantielle de tokens.
 
-### 3. Isolation Stricte des Contextes
-Pour préserver la fenêtre de contexte et éviter tout biais de confirmation :
+### 3. Isolation Stricte des Contextes & Préservation des Tokens
+Pour éviter tout biais de confirmation et empêcher l'explosion de la fenêtre de contexte :
 * L'**Agent Qualité** ne reçoit **que** le code source généré (aucune vue sur la spécialité ou la spec initiale).
 * L'**Agent Sécurité** reçoit **le code source ET la review qualité** préalable.
-* Les **Prompts de feedback correctifs** sont synthétisés sous forme de listes à puces concises pour réinjecter le strict minimum nécessaire au développeur.
+* Les **Prompts de feedback correctifs** sont synthétisés sous forme de listes à puces concises pour réinjecter le strict minimum nécessaire au développeur en cas de rejet.
 
 ### 4. Garde-fou Anti-Boucle (Circuit Breaker)
-* Un compteur de cycles (`MAX_WORKFLOW_RETRIES`) plafonne le nombre d'allers-retours entre le développement et les revues en cas de rejet persistant, évitant ainsi toute boucle infinie.
+* Un compteur de cycles (`MAX_WORKFLOW_RETRIES`) plafonne le nombre d'allers-retours entre le développement et les revues en cas de rejet persistant, évitant ainsi toute consommation incontrôlée.
+
+### 5. Compatibilité Multiplateforme Native (Linux, macOS, Windows)
+* **Windows CMD / PowerShell :** Prise en charge native des scripts batch npm (`claude.cmd`) via `shell=True` automatique sous Windows.
+* **Encodage UTF-8 universel :** Décodage explicite en UTF-8 avec gestion des erreurs de remplacement pour éviter les erreurs `UnicodeDecodeError` (page de code Windows CP1252 / CP850).
+* **Reconfiguration console :** `sys.stdout` et `sys.stderr` sont configurés pour afficher correctement les caractères accentués et les emojis sous les consoles Windows (cmd.exe, PowerShell, Windows Terminal).
+* **Détection automatique des chemins :** Recherche intelligente du binaire `claude` dans le `PATH`, les répertoires npm Linux/macOS ainsi que `%APPDATA%\npm`, `%LOCALAPPDATA%` et `Program Files`.
+* **Chargement résilient du `.env` :** Supporte `python-dotenv` tout en intégrant un parseur de secours natif sans aucune dépendance externe requise.
 
 ---
 
@@ -44,7 +54,7 @@ flowchart TD
     JevRoute -->|Tâche Simple| DevSimple[Dev Simple<br/><i>Modèle : Sonnet</i>]
     DevSimple --> QualSimple[Check Bug & Qualité<br/><i>Modèle : Sonnet</i>]
     QualSimple --> JevQualSimple{Jev : Validation Qualité ?}
-    JevQualSimple -->|Rejet| FbQualSimple[Feedback Correctif<br/><i>Modèle : Haiku</i>]
+    JevQualSimple -->|Rejet| FbQualSimple[Feedback Correctif Qualité<br/><i>Modèle : Haiku</i>]
     FbQualSimple --> DevSimple
     JevQualSimple -->|Validé| DocSimple[Doc & Commit Git<br/><i>Modèle : Sonnet</i>]
 
@@ -52,7 +62,7 @@ flowchart TD
     JevRoute -->|Tâche Moyenne| DevMoy[Dev Moyen<br/><i>Modèle : Sonnet</i>]
     DevMoy --> QualMoy[Check Bug & Qualité<br/><i>Modèle : Sonnet</i>]
     QualMoy --> JevQualMoy{Jev : Validation Qualité ?}
-    JevQualMoy -->|Rejet| FbQualMoy[Feedback Correctif<br/><i>Modèle : Haiku</i>]
+    JevQualMoy -->|Rejet| FbQualMoy[Feedback Correctif Qualité<br/><i>Modèle : Haiku</i>]
     FbQualMoy --> DevMoy
     JevQualMoy -->|Validé| SecuMoy[Check Sécurité<br/><i>Modèle : Sonnet</i>]
     SecuMoy --> JevSecuMoy{Jev : Validation Sécurité ?}
@@ -64,7 +74,7 @@ flowchart TD
     JevRoute -->|Tâche Complexe| DevComp[Dev Complexe<br/><i>Modèle : Opus</i>]
     DevComp --> QualComp[Check Bug & Qualité<br/><i>Modèle : Opus</i>]
     QualComp --> JevQualComp{Jev : Validation Qualité ?}
-    JevQualComp -->|Rejet| FbQualComp[Feedback Correctif<br/><i>Modèle : Sonnet</i>]
+    JevQualComp -->|Rejet| FbQualComp[Feedback Correctif Qualité<br/><i>Modèle : Sonnet</i>]
     FbQualComp --> DevComp
     JevQualComp -->|Validé| SecuComp[Check Sécurité<br/><i>Modèle : Sonnet</i>]
     SecuComp --> JevSecuComp{Jev : Validation Sécurité ?}
@@ -72,7 +82,7 @@ flowchart TD
     FbSecuComp --> DevComp
     JevSecuComp -->|Validé| DocComp[Doc & Commit Git<br/><i>Modèle : Haiku</i>]
 
-    DocSimple --> End([Terminé : Artefacts Sauvegardés])
+    DocSimple --> End([Terminé : Artefacts Sauvegardés dans output/])
     DocMoy --> End
     DocComp --> End
 ```
@@ -100,71 +110,98 @@ flowchart TD
 
 ```text
 .
-├── cli.py                     # Point d'entrée en ligne de commande (CLI interactif et options)
-├── orchestrator.py            # Moteur de machine à états et gestion des flux multi-agents
+├── cli.py                     # Point d'entrée en ligne de commande (CLI interactif, options, gestion UTF-8)
+├── orchestrator.py            # Moteur de machine à états finis, isolation des contextes et persistance disque
 ├── models.py                  # Modèles de données typés (WorkflowType, DevSpecialty, StepRecord, Report)
-├── config.py                  # Configuration globale, détection automatique du binaire Claude et .env
+├── config.py                  # Configuration globale, détection multiplateforme de Claude et parser .env
 ├── clients/
-│   ├── claude_cli.py          # Wrapper subprocess pour le CLI Claude Code headless (-p)
-│   └── jev_client.py          # Client API HTTP TypeSafe Jev (System One / Decide + mock)
+│   ├── claude_cli.py          # Wrapper subprocess pour le CLI Claude Code headless (-p, cross-platform)
+│   └── jev_client.py          # Client API HTTP TypeSafe Jev (System One / Decide + mock heuristique)
 ├── tests/
-│   └── test_orchestrator.py   # Suite de tests unitaires (couverture complète des 3 branches)
-├── output/                    # Dossier des artefacts persistés (code, doc, rapport d'audit)
-├── sp_cification_proposition_d_architecture_multi_agents.md  # Spécification technique source
+│   └── test_orchestrator.py   # Suite de tests unitaires (couverture complète des 3 branches et isolation)
+├── output/                    # Dossier des artefacts persistés (code produit, documentation, rapport d'audit)
+├── sp_cification_proposition_d_architecture_multi_agents.md  # Spécification technique source du projet
 ├── .env.example               # Modèle des variables d'environnement
 ├── requirements.txt           # Dépendances Python minimales
-└── .gitignore                 # Exclusions Git (fichiers temporaires, venv, caches)
+└── .gitignore                 # Exclusions Git (fichiers temporaires, caches, venv)
 ```
 
 ---
 
 ## 🚀 Installation & Prérequis
 
-### 1. Prérequis Système
-* **Python 3.10+**
-* **Claude Code CLI** installé et authentifié sur votre machine :
-  ```bash
-  npm install -g @anthropic-ai/claude-code
-  claude auth login
-  ```
-  *(Vérifiez que `claude -p "test"` fonctionne dans votre terminal sans demande de clé API)*.
-* Une clé API **TypeSafe** pour le modèle Jev (optionnel : un mode simulation/mock heuristique est intégré si vous n'avez pas de clé).
+### 1. Prérequis Généraux
+* **Python 3.10 ou supérieur**
+* **Node.js** (requis pour installer le CLI Claude Code)
+* Un compte **Claude Max 5x** ou Claude Pro avec session active.
+* Une clé API **TypeSafe** pour le modèle Jev (optionnel : un mode simulation/mock heuristique est activé automatiquement si aucune clé n'est fournie).
 
-### 2. Cloner et Installer les Dépendances
+---
+
+### 2. Guide d'Installation par Système d'Exploitation
+
+#### 🐧 Linux & 🍎 macOS
 
 ```bash
+# 1. Installer et connecter Claude Code CLI
+npm install -g @anthropic-ai/claude-code
+claude auth login
+
+# 2. Cloner le dépôt
 git clone https://github.com/GirardotN/Workflow-Claude-Code.git
 cd Workflow-Claude-Code
 
-# Création d'un environnement virtuel (recommandé)
+# 3. Créer et activer l'environnement virtuel
 python3 -m venv venv
 source venv/bin/activate
 
-# Installation des dépendances
+# 4. Installer les dépendances
 pip install -r requirements.txt
 ```
+
+#### 🪟 Windows (PowerShell ou Invite de commandes CMD)
+
+```cmd
+:: 1. Installer et connecter Claude Code CLI
+npm install -g @anthropic-ai/claude-code
+claude auth login
+
+:: 2. Cloner le dépôt
+git clone https://github.com/GirardotN/Workflow-Claude-Code.git
+cd Workflow-Claude-Code
+
+:: 3. Créer et activer l'environnement virtuel
+python -m venv venv
+venv\Scripts\activate
+
+:: 4. Installer les dépendances
+pip install -r requirements.txt
+```
+
+> **Note Windows :** Le CLI `claude` est automatiquement résolu sous Windows sous la forme `claude.cmd`. L'orchestrateur configure automatiquement l'interpréteur et la console en encodage UTF-8.
 
 ---
 
 ## ⚙️ Configuration (`.env`)
 
-Copiez le modèle `.env.example` en `.env` :
+Copiez le modèle [.env.example](file:///home/depinfo/Bureau/Test%20workflow/.env.example) vers `.env` :
 
 ```bash
-cp .env.example .env
+cp .env.example .env     # Linux / macOS
+copy .env.example .env   # Windows
 ```
 
-Ajustez les variables selon votre environnement :
+Ajustez les variables selon vos besoins :
 
 | Variable | Description | Valeur par défaut |
 | :--- | :--- | :--- |
-| `TYPESAFE_API_KEY` | Clé API pour TypeSafe Jev (obtenue sur [typesafe.ai](https://typesafe.ai)) | `""` *(active le mock auto si vide)* |
-| `TYPESAFE_API_URL` | URL de l'endpoint principal TypeSafe System One | `https://api.typesafe.ai/v1/systemone` |
-| `TYPESAFE_FALLBACK_URL` | URL de secours vers l'endpoint direct | `https://api.typesafe.ai/v1/decide` |
-| `CLAUDE_BIN` | Chemin absolu vers le binaire `claude` *(si hors PATH)* | Détection automatique |
-| `CLAUDE_TIMEOUT_SECONDS` | Délai d'attente maximum par appel Claude CLI | `180` |
-| `MAX_WORKFLOW_RETRIES` | Nombre maximal d'itérations de feedback (Circuit Breaker) | `4` |
-| `MOCK_SERVICES` | Activer le mode simulation pour Claude et Jev (`1` ou `0`) | `0` |
+| `TYPESAFE_API_KEY` | Clé API pour TypeSafe Jev (obtenue sur [typesafe.ai](https://typesafe.ai)) | `""` *(active le mock heuristique si vide)* |
+| `TYPESAFE_API_URL` | Endpoint officiel TypeSafe System One | `https://api.typesafe.ai/v1/systemone` |
+| `TYPESAFE_FALLBACK_URL` | Endpoint de secours TypeSafe Decide direct | `https://api.typesafe.ai/v1/decide` |
+| `CLAUDE_BIN` | Chemin absolu personnalisé vers le binaire `claude` | Détection automatique (`PATH`, AppData, npm) |
+| `CLAUDE_TIMEOUT_SECONDS` | Délai d'expiration maximum par appel au CLI Claude | `180` |
+| `MAX_WORKFLOW_RETRIES` | Nombre maximum de cycles de feedback (Circuit Breaker) | `4` |
+| `MOCK_SERVICES` | Activer la simulation intégrale sans appel réseau/CLI (`1` ou `0`) | `0` |
 
 ---
 
@@ -172,64 +209,72 @@ Ajustez les variables selon votre environnement :
 
 ### 1. Exécution Standard (En Production)
 
-Lancez l'orchestrateur avec une invite simple en langage naturel :
+Fournissez simplement une consigne en langage naturel décrivant votre besoin :
 
 ```bash
+# Linux / macOS
 python3 cli.py "Créer un service FastAPI d'authentification JWT avec rate limiting Redis"
+
+# Windows
+python cli.py "Créer un service FastAPI d'authentification JWT avec rate limiting Redis"
 ```
 
 ### 2. Mode Simulation / Hors Ligne (`--mock`)
 
-Permet de tester l'orchestration, les transitions d'état et la persistance disque instantanément sans exécuter Claude ni consommer de quota réseau :
+Le mode `--mock` permet de tester le flux de la machine à états, le routage et la génération d'artefacts localement, de façon instantanée, sans dépendre du réseau ni consommer de session CLI :
 
 ```bash
-python3 cli.py --mock "Créer un composant React de tableau de bord avec graphiques"
+python3 cli.py --mock "Créer un composant React de tableau de bord avec graphiques interactifs"
 ```
 
 ### 3. Options de la Ligne de Commande
 
-```bash
+```text
 usage: cli.py [-h] [--mock] [--max-retries MAX_RETRIES] [--workspace WORKSPACE] [-v] [prompt]
 
 Arguments positionnels :
   prompt                 Prompt simple décrivant la tâche de développement
 
 Options :
-  -h, --help             Affiche ce message d'aide et quitte
-  --mock                 Exécute en mode simulation/mock
+  -h, --help             Affiche l'aide et quitte
+  --mock                 Exécute le workflow en mode simulation
   --max-retries N        Nombre maximum d'allers-retours de feedback (défaut : 4)
   --workspace DOSSIER    Répertoire de destination des artefacts générés (défaut : ./output)
-  -v, --verbose          Active les logs détaillés de débogage
+  -v, --verbose          Active la journalisation détaillée (DEBUG)
 ```
 
 ---
 
 ## 📂 Artefacts Générés
 
-À l'issue de chaque exécution réussie, l'orchestrateur génère automatiquement dans le dossier de destination (`./output` par défaut) :
+À la fin de chaque exécution validée, les fichiers suivants sont persistés dans le dossier spécifié (`./output` par défaut) :
 
-1. **`generated_solution.<ext>`** : Le code source complet produit par l'agent de développement, avec l'extension adaptée à la spécialité (`.py`, `.ts`, `.tsx`, `.cs`).
-2. **`GENERATED_DOC.md`** : La documentation technique prête à l'emploi accompagnée de la proposition de message de commit Git au format *Conventional Commits*.
-3. **`WORKFLOW_AUDIT.md`** : Le journal d'audit complet retraçant chaque étape, le modèle utilisé, la durée d'exécution et les décisions prises par Jev.
+1. **`generated_solution.<ext>`** : Le code source complet produit par l'agent développeur spécialisé (extension automatique : `.py`, `.ts`, `.tsx`, `.cs`).
+2. **`GENERATED_DOC.md`** : La documentation technique d'utilisation accompagnée de la proposition de message de commit Git au format *Conventional Commits*.
+3. **`WORKFLOW_AUDIT.md`** : Le journal d'audit complet retraçant chaque étape chronométrée, les modèles assignés et les validations accordées par Jev.
 
 ---
 
 ## 🧪 Tests Unitaires
 
-Une suite complète de tests vérifie :
-* L'aiguillage et l'exécution de la branche **Simple** (pas de check sécurité, modèles Sonnet).
-* Le cycle de la branche **Moyenne** avec simulation de rejet sécurité puis correction (Haiku / Sonnet).
-* Le cycle de la branche **Complexe** avec utilisation d'**Opus** pour le Dev et la Qualité, et rejet/correction.
-* Le respect absolu de **l'isolation des contextes** entre agents.
-* Le bon déclenchement du **Circuit Breaker** en cas de rejets multiples consécutifs.
+Une suite complète de tests vérifie de manière déterministe les comportements clés :
+* **Branche Simple :** Modèles Sonnet, absence d'exécution de l'audit sécurité, finalisation immédiate.
+* **Branche Moyenne :** Cycle Dev $\rightarrow$ Qualité $\rightarrow$ Sécurité, simulation d'un rejet sécurité et prise en compte du feedback Haiku.
+* **Branche Complexe :** Assignation automatique des modèles **Opus** pour le Dev et la Qualité, gestion des rejets et feedbacks Sonnet.
+* **Isolation des contextes :** Vérification que le relecteur qualité ne reçoit que le code brut, et que le relecteur sécurité reçoit le code plus la review qualité.
+* **Circuit Breaker :** Arrêt propre de l'orchestrateur lorsque la limite d'itérations est atteinte, évitant toute boucle infinie.
 
-Pour exécuter les tests :
+Pour lancer les tests :
 
 ```bash
+# Linux / macOS
 python3 -m unittest discover -s tests
+
+# Windows
+python -m unittest discover -s tests
 ```
 
-Sortie attendue :
+Résultat attendu :
 ```text
 Ran 5 tests in 0.002s
 
@@ -240,9 +285,9 @@ OK
 
 ## 🛡️ Sécurité & Bonnes Pratiques
 
-* **Confidentialité locale :** Le CLI Claude Code s'exécute localement sur votre machine au sein de votre session active.
-* **Séparation des privilèges :** Les agents de test/audit n'ont pas accès aux prompts internes de spécification, garantissant un contrôle indépendant et objectif.
-* **Typage strict :** L'ensemble du code Python est typé (`dataclasses`, `Enum`, hints statiques) pour faciliter la maintenance et les extensions futures.
+* **Confidentialité locale :** Le CLI Claude Code s'exécute localement sur votre poste au sein de votre session active.
+* **Séparation stricte des privilèges :** Les agents de test et d'audit n'ont pas accès aux prompts de spécification ou aux instructions internes du développeur.
+* **Typage et maintenabilité :** Le projet utilise un typage Python rigoureux (`dataclasses`, `Enum`, annotations de types) facilitant son intégration dans des pipelines CI/CD.
 
 ---
 
