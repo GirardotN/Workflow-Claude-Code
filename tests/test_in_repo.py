@@ -219,7 +219,17 @@ class TestInRepoWorkflow(unittest.TestCase):
 
             def run_tests(self, project_dir, custom_cmd=None):
                 self.calls += 1
+                # Appel 1 : Baseline (santé initiale du projet -> tests passent)
                 if self.calls == 1:
+                    return TestResult(
+                        passed=True,
+                        command="npm test",
+                        output="PASS: Initial baseline passed",
+                        duration_seconds=0.1,
+                        returncode=0,
+                    )
+                # Appel 2 : Cycle 1 post-dev (l'agent a introduit un bug -> tests échouent)
+                if self.calls == 2:
                     return TestResult(
                         passed=False,
                         command="npm test",
@@ -227,6 +237,7 @@ class TestInRepoWorkflow(unittest.TestCase):
                         duration_seconds=0.1,
                         returncode=1,
                     )
+                # Appel 3+ : Cycle 2 post-feedback (l'agent a corrigé -> tests passent)
                 return TestResult(
                     passed=True,
                     command="npm test",
@@ -251,6 +262,7 @@ class TestInRepoWorkflow(unittest.TestCase):
 
         self.assertTrue(report.is_success)
         self.assertTrue(report.tests_passed)
+        self.assertTrue(report.baseline_tests_passed)
         step_names = [s.step_name for s in report.history]
         self.assertIn("TESTS_FAILED_CYCLE_1", step_names)
         self.assertIn("DEV_IN_SITU_CYCLE_2", step_names)
@@ -270,6 +282,68 @@ class TestInRepoWorkflow(unittest.TestCase):
         # Le diff doit impérativement contenir le nouveau fichier et son contenu
         self.assertIn("NewBrandComponent.tsx", diff)
         self.assertIn("Brand New", diff)
+
+    def test_in_repo_stash_guard_preserves_uncommitted_files(self):
+        """
+        Vérifie que Stash Guard protège les fichiers modifiés et non commités
+        de l'utilisateur lors de l'exécution du workflow puis les restaure à l'identique.
+        """
+        # Création d'un travail non commité de l'utilisateur
+        user_wip_file = self.repo_path / "wip_notes.txt"
+        user_wip_file.write_text("Travail en cours crucial de l'utilisateur", encoding="utf-8")
+
+        claude = ClaudeCliClient(mock_mode=True)
+        jev = JevClient(mock_mode=True)
+
+        orchestrator = MultiAgentOrchestrator(
+            claude_client=claude,
+            jev_client=jev,
+            project_dir=str(self.repo_path),
+            use_branch=False,
+            auto_commit=False,
+            run_tests=False,
+        )
+
+        report = orchestrator.run("Ajoute un composant dans le projet")
+        self.assertTrue(report.is_success)
+
+        # Le fichier non commité doit impérativement être toujours présent et intact
+        self.assertTrue(user_wip_file.exists())
+        self.assertEqual(user_wip_file.read_text(encoding="utf-8"), "Travail en cours crucial de l'utilisateur")
+
+    def test_in_repo_baseline_tests_detected(self):
+        """
+        Vérifie qu'un échec de test préexistant dans le dépôt (Baseline Cycle 0)
+        est correctement détecté et consigné sans être imputé à Claude si la sortie est identique.
+        """
+        claude = ClaudeCliClient(mock_mode=True)
+        jev = JevClient(mock_mode=True)
+
+        from clients.test_runner import TestResult, TestRunner
+
+        class ConstantFailingTestRunner(TestRunner):
+            def run_tests(self, project_dir, custom_cmd=None):
+                return TestResult(
+                    passed=False,
+                    command="pytest",
+                    output="FAIL: tests/legacy_test.py::test_legacy_bug",
+                    duration_seconds=0.2,
+                    returncode=1,
+                )
+
+        runner = ConstantFailingTestRunner()
+        orchestrator = MultiAgentOrchestrator(
+            claude_client=claude,
+            jev_client=jev,
+            test_runner=runner,
+            project_dir=str(self.repo_path),
+            run_tests=True,
+            max_retries=2,
+        )
+
+        report = orchestrator.run("Corrige une fonction")
+        self.assertTrue(report.is_success)
+        self.assertFalse(report.baseline_tests_passed)
 
 
 if __name__ == "__main__":

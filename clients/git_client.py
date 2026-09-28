@@ -29,6 +29,7 @@ class GitClient:
     def _run_git(self, args: List[str], check: bool = True) -> str:
         """Exécute une commande git dans le répertoire du projet."""
         cmd = ["git"] + args
+        env = {**os.environ, "LC_ALL": "C"}
         try:
             proc = subprocess.run(
                 cmd,
@@ -37,6 +38,7 @@ class GitClient:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                env=env,
                 check=check,
             )
             return proc.stdout.strip()
@@ -182,4 +184,38 @@ class GitClient:
         except Exception as e:
             logger.warning(f"Impossible de supprimer la branche {branch_name} : {e}")
             return False
+
+    def stash_push(self, message: str = "workflow-auto-stash") -> bool:
+        """
+        Met de côté les modifications non commitées de l'espace de travail (y compris untracked).
+        Retourne True si un stash a été effectivement créé.
+        """
+        try:
+            if self.is_working_tree_clean():
+                return False
+            out = self._run_git(["stash", "push", "-u", "-m", message], check=False)
+            if "Saved working directory" in out or "saved" in out.lower() or "sauvegard" in out.lower():
+                logger.info(f"Stash Guard : Modifications locales mises en réserve ({message}).")
+                return True
+            stash_list = self._run_git(["stash", "list"], check=False)
+            if message in stash_list:
+                logger.info(f"Stash Guard : Modifications locales mises en réserve ({message}).")
+                return True
+            return False
+        except Exception as e:
+            logger.warning(f"Stash Guard : Impossible d'exécuter stash_push : {e}")
+            return False
+
+    def stash_pop(self) -> bool:
+        """
+        Restaure les modifications préalablement mises en réserve par stash_push.
+        """
+        try:
+            out = self._run_git(["stash", "pop"], check=False)
+            logger.info("Stash Guard : Modifications locales restaurées avec succès.")
+            return True
+        except Exception as e:
+            logger.error(f"Stash Guard : Erreur lors de stash_pop : {e}")
+            return False
+
 

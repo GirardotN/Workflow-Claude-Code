@@ -118,4 +118,6 @@ _user_cfg = load_user_config()
 DEFAULT_ALLOW_BASH = bool(_user_cfg.get("allow_bash", os.getenv("ALLOW_BASH", "0").lower() in ("1", "true", "yes")))
 DEFAULT_RUN_TESTS = bool(_user_cfg.get("run_tests", os.getenv("RUN_TESTS", "1").lower() in ("1", "true", "yes")))
 DEFAULT_USE_BRANCH = bool(_user_cfg.get("use_branch", os.getenv("USE_BRANCH", "1").lower() in ("1", "true", "yes")))
+DEFAULT_ALLOW_DIRTY = bool(_user_cfg.get("allow_dirty", os.getenv("ALLOW_DIRTY", "0").lower() in ("1", "true", "yes")))
+
 

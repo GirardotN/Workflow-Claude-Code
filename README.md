@@ -2,6 +2,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](https://github.com/GirardotN/Workflow-Claude-Code)
+[![CI](https://github.com/GirardotN/Workflow-Claude-Code/actions/workflows/ci.yml/badge.svg)](https://github.com/GirardotN/Workflow-Claude-Code/actions)
 [![Claude Code CLI](https://img.shields.io/badge/Claude_Code-Headless_CLI-6B46C1.svg)](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview)
 [![TypeSafe Jev](https://img.shields.io/badge/TypeSafe-Jev_System_One-00C7B7.svg)](https://typesafe.ai)
 [![Zero API Token Claude](https://img.shields.io/badge/Claude_API_Credits-0_Utilis%C3%A9-brightgreen.svg)](#-contraintes-fondamentales--z%C3%A9ro-cr%C3%A9dit-api-claude)
@@ -34,8 +35,10 @@ Pour éviter tout biais de confirmation et empêcher l'explosion de la fenêtre 
 ### 4. Garde-fou Anti-Boucle (Circuit Breaker)
 * Un compteur de cycles (`MAX_WORKFLOW_RETRIES`) plafonne le nombre d'allers-retours entre le développement et les revues en cas de rejet persistant, évitant ainsi toute consommation incontrôlée.
 
-### 5. Compatibilité Multiplateforme Native (Linux, macOS, Windows)
-* **Windows CMD / PowerShell :** Prise en charge native des scripts batch npm (`claude.cmd`) via `shell=True` automatique sous Windows.
+### 5. Compatibilité Multiplateforme & Sécurité Subprocess (Linux, macOS, Windows)
+* **Windows CMD / PowerShell :** Prise en charge native et sécurisée des scripts batch npm (`claude.cmd`) via `comspec` et `shell=False` afin de bannir tout risque d'injection shell.
+* **Stash Guard (Anti-Perte de Données) :** Mise en réserve automatique des modifications locales non commitées de l'utilisateur (`git stash push -u`) avec restauration garantie (`finally: git stash pop`).
+* **Baseline Tests (Cycle 0) :** Diagnostic préalable de l'état de santé initial de la suite de tests pour distinguer les défaillances préexistantes des régressions induites par le code produit.
 * **Encodage UTF-8 universel :** Décodage explicite en UTF-8 avec gestion des erreurs de remplacement pour éviter les erreurs `UnicodeDecodeError` (page de code Windows CP1252 / CP850).
 * **Reconfiguration console :** `sys.stdout` et `sys.stderr` sont configurés pour afficher correctement les caractères accentués et les emojis sous les consoles Windows (cmd.exe, PowerShell, Windows Terminal).
 * **Détection automatique des chemins :** Recherche intelligente du binaire `claude` dans le `PATH`, les répertoires npm Linux/macOS ainsi que `%APPDATA%\npm`, `%LOCALAPPDATA%` et `Program Files`.
@@ -309,9 +312,9 @@ Options principales :
 
 ---
 
-## 🧪 Tests Unitaires
+## 🧪 Tests Unitaires & Intégration Continue (CI/CD)
 
-Une suite de 20 tests unitaires automatisés couvre l'ensemble des scénarios :
+Une suite hermétique de **24 tests unitaires** automatisés couvre l'ensemble des scénarios critiques (isolation transactionnelle, circuit breaker, Stash Guard, baseline tests, parsing lexical JSON équilibré, exécution de tests multi-écosystèmes) :
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -319,10 +322,15 @@ python3 -m unittest discover -s tests -v
 
 Résultat :
 ```text
-Ran 20 tests in 0.682s
+Ran 24 tests in 4.6s
 
 OK
 ```
+
+### 🚀 Matrice CI/CD GitHub Actions
+Le dépôt intègre un pipeline d'intégration continue automatique (`.github/workflows/ci.yml`) testant chaque commit et pull request sur une matrice 3x3 complète :
+* **Systèmes d'exploitation :** Ubuntu Linux, macOS, Windows
+* **Versions Python :** 3.10, 3.11, 3.12
 
 ---
 

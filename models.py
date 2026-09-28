@@ -84,4 +84,5 @@ class WorkflowExecutionReport:
     original_branch: Optional[str] = None
     tests_passed: Optional[bool] = None
     tests_output: str = ""
+    baseline_tests_passed: Optional[bool] = None
 
