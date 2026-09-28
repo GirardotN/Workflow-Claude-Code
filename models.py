@@ -33,14 +33,15 @@ class DevSpecialty(str, Enum):
 
     @classmethod
     def from_str(cls, value: str) -> "DevSpecialty":
+        import re
         val_clean = value.strip().lower()
         if "c#" in val_clean or "csharp" in val_clean:
             return cls.CSHARP
-        if "node" in val_clean or "js" in val_clean or "typescript" in val_clean:
+        if re.search(r"\b(node|nodejs|js|javascript|typescript|ts)\b", val_clean):
             return cls.NODEJS
-        if "ui" in val_clean or "frontend" in val_clean or "react" in val_clean or "vue" in val_clean:
+        if re.search(r"\b(ui|frontend|front-end|react|vue|html|css)\b", val_clean):
             return cls.UI
-        if "python" in val_clean or "py" in val_clean:
+        if re.search(r"\b(python|py|fastapi|django|flask)\b", val_clean):
             return cls.PYTHON
         return cls.PYTHON  # Par défaut
 
@@ -71,3 +72,11 @@ class WorkflowExecutionReport:
     is_success: bool = False
     error_message: Optional[str] = None
     history: List[StepRecord] = field(default_factory=list)
+
+    # Champs spécifiques au mode In-Repo (modifications directes dans un projet)
+    is_in_repo: bool = False
+    project_dir: Optional[str] = None
+    target_files: List[str] = field(default_factory=list)
+    git_diff: str = ""
+    modified_files: List[str] = field(default_factory=list)
+    commit_hash: Optional[str] = None

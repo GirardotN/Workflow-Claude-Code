@@ -6,12 +6,14 @@ l'isolation stricte des contextes et les garde-fous anti-dérive.
 
 import logging
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 from clients.claude_cli import ClaudeCliClient, ClaudeCliError
+from clients.git_client import GitClient
 from clients.jev_client import JevClient
 from config import (
     MAX_RETRIES,
@@ -27,6 +29,41 @@ from models import (
 )
 
 logger = logging.getLogger("orchestrator")
+
+LANG_TO_EXT = {
+    "python": ".py",
+    "py": ".py",
+    "typescript": ".ts",
+    "ts": ".ts",
+    "tsx": ".tsx",
+    "javascript": ".js",
+    "js": ".js",
+    "jsx": ".jsx",
+    "csharp": ".cs",
+    "cs": ".cs",
+    "c#": ".cs",
+    "html": ".html",
+    "css": ".css",
+    "json": ".json",
+    "sql": ".sql",
+}
+
+
+def clean_code_output(raw_code: str) -> Tuple[str, Optional[str]]:
+    """
+    Extrait le code source contenu dans un bloc Markdown (```<lang> ... ```)
+    et détecte le tag de langage si présent.
+    """
+    if not raw_code:
+        return "", None
+
+    match = re.search(r"```([a-zA-Z0-9_#+-]*)\s*\n([\s\S]*?)\n```", raw_code)
+    if match:
+        lang = match.group(1).strip().lower() or None
+        code = match.group(2)
+        return code, lang
+
+    return raw_code.strip(), None
 
 
 class WorkflowMaxRetriesExceeded(RuntimeError):
@@ -46,20 +83,360 @@ class MultiAgentOrchestrator:
         jev_client: Optional[JevClient] = None,
         max_retries: int = MAX_RETRIES,
         workspace_dir: Optional[str] = None,
+        project_dir: Optional[str] = None,
+        standalone_mode: bool = False,
+        auto_commit: bool = False,
         on_step_callback: Optional[Callable[[StepRecord], None]] = None,
     ):
         self.claude = claude_client or ClaudeCliClient()
         self.jev = jev_client or JevClient()
         self.max_retries = max_retries
         self.workspace_dir = workspace_dir
+        self.project_dir = Path(project_dir).resolve() if project_dir else None
+        self.standalone_mode = standalone_mode
+        self.auto_commit = auto_commit
         self.on_step_callback = on_step_callback
+        self.git = GitClient(self.project_dir) if self.project_dir else None
 
-    def run(self, prompt_simple: str) -> WorkflowExecutionReport:
+    def run(self, prompt_simple: str, raise_on_failure: bool = False) -> WorkflowExecutionReport:
         """
         Exécute le workflow multi-agents de bout en bout à partir d'un prompt utilisateur simple.
+        Bascule automatiquement entre le mode In-Repo (projet existant sous Git)
+        et le mode Standalone (génération de fichier neuf dans output/).
         """
         report = WorkflowExecutionReport(prompt_simple=prompt_simple)
-        logger.info(f"Démarrage du workflow pour : '{prompt_simple[:60]}...'")
+
+        # Détection du mode : In-Repo si project_dir est un dépôt Git valide et que standalone_mode n'est pas forcé
+        is_in_repo = False
+        if not self.standalone_mode and self.project_dir and self.git and self.git.is_git_repository():
+            is_in_repo = True
+
+        report.is_in_repo = is_in_repo
+        report.project_dir = str(self.project_dir) if self.project_dir else None
+
+        if is_in_repo:
+            return self._run_in_repo(prompt_simple, report, raise_on_failure=raise_on_failure)
+        else:
+            return self._run_standalone(prompt_simple, report, raise_on_failure=raise_on_failure)
+
+    def _run_in_repo(
+        self,
+        prompt_simple: str,
+        report: WorkflowExecutionReport,
+        raise_on_failure: bool = False,
+    ) -> WorkflowExecutionReport:
+        """
+        Exécute le workflow en mode In-Repo :
+        1. Exploration et localisation du code cible dans project_dir (Sonnet + tools Read,Grep,Glob).
+        2. Aiguillage Jev (complexité & spécialité).
+        3. Développement in-situ modifiant directement les fichiers (Opus/Sonnet + tools Read,Edit,Write).
+        4. Capture du git diff réel.
+        5. Check Qualité sur le git diff (Jev validation/rejet + rollback git si rejet).
+        6. Check Sécurité sur le git diff (Jev validation/rejet + rollback git si rejet).
+        7. Proposition et application optionnelle du commit Git conventionnel.
+        """
+        logger.info(f"Démarrage du workflow In-Repo dans : {self.project_dir} pour : '{prompt_simple[:60]}...'")
+
+        # Vérification préalable de la propreté du dépôt
+        if not self.git.is_working_tree_clean():
+            logger.warning("Attention : Le répertoire de travail du projet n'est pas propre (fichiers modifiés non commités détectés).")
+
+        # =========================================================================
+        # ÉTAPE 1 : Exploration du Codebase & Spécification In-Situ (Sonnet)
+        # =========================================================================
+        logger.info(">>> Étape 1 : Exploration du codebase et spécification technique in-situ (Sonnet)")
+        spec_prompt = (
+            "Tu es un Lead Software Architect. Le projet cible se trouve dans le répertoire courant.\n"
+            f"Demande utilisateur : {prompt_simple}\n\n"
+            "Explore le codebase à l'aide de tes outils pour localiser précisément les fichiers, "
+            "fonctions ou composants concernés par cette demande.\n"
+            "Rédige une spécification technique d'implémentation in-situ complète :\n"
+            "1. Fichiers et fonctions cibles identifiés (chemins relatifs précis)\n"
+            "2. Analyse de l'implémentation actuelle\n"
+            "3. Plan d'édition chirurgicale requis\n"
+            "4. Contrats d'interfaces et critères de non-régression."
+        )
+        t0 = time.perf_counter()
+        spec_complexe = self.claude.run(
+            spec_prompt,
+            model=MODEL_SONNET,
+            cwd=str(self.project_dir),
+            tools="Read,Grep,Glob",
+        )
+        dur = time.perf_counter() - t0
+        report.spec_complexe = spec_complexe
+        self._record_step(report, "1_EXPLORATION_ET_SPEC", MODEL_SONNET, spec_prompt, spec_complexe, dur)
+
+        # =========================================================================
+        # ÉTAPE 2 : Aiguillage de complexité et spécialité par JEV
+        # =========================================================================
+        logger.info(">>> Étape 2 : Aiguillage de complexité et spécialité dev via Jev")
+        workflow_type_str = self.jev.classify(
+            spec_complexe,
+            [WorkflowType.SIMPLE.value, WorkflowType.MOYENNE.value, WorkflowType.COMPLEXE.value],
+            question_label="Quel est le niveau de complexité de cette tâche de refactoring / modification ?",
+        )
+        report.workflow_type = WorkflowType.from_str(workflow_type_str)
+
+        dev_specialty_str = self.jev.classify(
+            spec_complexe,
+            [
+                DevSpecialty.CSHARP.value,
+                DevSpecialty.NODEJS.value,
+                DevSpecialty.UI.value,
+                DevSpecialty.PYTHON.value,
+            ],
+            question_label="Quelle est la spécialité technique du développeur requise pour ce projet ?",
+        )
+        report.dev_specialty = DevSpecialty.from_str(dev_specialty_str)
+
+        logger.info(f"Aiguillage Jev validé : Workflow={report.workflow_type.value}, Dev={report.dev_specialty.value}")
+
+        is_complexe = (report.workflow_type == WorkflowType.COMPLEXE)
+        is_simple = (report.workflow_type == WorkflowType.SIMPLE)
+
+        dev_model = MODEL_OPUS if is_complexe else MODEL_SONNET
+        quality_model = MODEL_OPUS if is_complexe else MODEL_SONNET
+        feedback_bug_model = MODEL_SONNET if is_complexe else MODEL_HAIKU
+        security_model = MODEL_SONNET
+        feedback_secu_model = MODEL_SONNET if is_complexe else MODEL_HAIKU
+        doc_commit_model = MODEL_SONNET if is_simple else MODEL_HAIKU
+
+        # =========================================================================
+        # MACHINE À ÉTATS IN-REPO : DEV IN-SITU <-> QUALITÉ (DIFF) (<-> SÉCURITÉ)
+        # =========================================================================
+        etape = "DEV"
+        diff_content = ""
+        review_qualite = ""
+        review_securite = ""
+        dernier_feedback = ""
+        iter_count = 0
+
+        while etape != "DOC_ET_COMMIT":
+            if iter_count >= self.max_retries:
+                err = (
+                    f"Circuit breaker : Nombre maximum d'itérations ({self.max_retries}) atteint. "
+                    f"Arrêt forcé à l'étape '{etape}' pour prévenir une consommation incontrôlée."
+                )
+                logger.error(err)
+                report.error_message = err
+                report.is_success = False
+                if raise_on_failure:
+                    raise WorkflowMaxRetriesExceeded(err)
+                return report
+
+            # ---------------------------------------------------------------------
+            # Nœud : DÉVELOPPEMENT IN-SITU
+            # ---------------------------------------------------------------------
+            if etape == "DEV":
+                iter_count += 1
+                report.iterations_count = iter_count
+                logger.info(f"--- Cycle {iter_count}/{self.max_retries} : DÉVELOPPEMENT IN-SITU (Modèle: {dev_model}) ---")
+
+                if not dernier_feedback:
+                    dev_prompt = (
+                        f"Tu es un expert {report.dev_specialty.value}.\n"
+                        "Applique directement les modifications demandées dans les fichiers du projet "
+                        "conformément au cahier des charges ci-dessous :\n\n"
+                        f"CAHIER DES CHARGES :\n{spec_complexe}\n\n"
+                        "Utilise tes outils pour modifier chirurgicalement les fichiers en place. "
+                        "Ne modifie que ce qui est strictement nécessaire et respecte l'architecture existante."
+                    )
+                else:
+                    dev_prompt = (
+                        f"Tu es un expert {report.dev_specialty.value}.\n"
+                        "La modification précédente a été rejetée lors de la revue. Corrige le tir directement dans les fichiers du projet :\n\n"
+                        f"CAHIER DES CHARGES :\n{spec_complexe}\n\n"
+                        f"RETOURS OBLIGATOIRES À CORRIGER :\n{dernier_feedback}\n\n"
+                        "Applique les corrections nécessaires dans les fichiers du projet."
+                    )
+
+                t0 = time.perf_counter()
+                self.claude.run(
+                    dev_prompt,
+                    model=dev_model,
+                    cwd=str(self.project_dir),
+                    tools="Read,Edit,Write,Grep,Glob,Bash",
+                    permission_mode="acceptEdits",
+                )
+                dur = time.perf_counter() - t0
+
+                # Capture du diff réel dans le dépôt Git
+                diff_content = self.git.get_diff()
+                modified_files = self.git.get_modified_files()
+                report.git_diff = diff_content
+                report.modified_files = modified_files
+                report.code_produit = diff_content
+
+                self._record_step(
+                    report,
+                    f"DEV_IN_SITU_CYCLE_{iter_count}",
+                    dev_model,
+                    dev_prompt,
+                    f"Fichiers modifiés: {', '.join(modified_files)}\n\nGit Diff:\n{diff_content}",
+                    dur,
+                )
+
+                dernier_feedback = ""
+                etape = "CHECK_QUALITE"
+
+            # ---------------------------------------------------------------------
+            # Nœud : CHECK QUALITÉ SUR GIT DIFF
+            # ---------------------------------------------------------------------
+            elif etape == "CHECK_QUALITE":
+                logger.info(f"--- Cycle {iter_count} : CHECK QUALITÉ SUR GIT DIFF (Modèle: {quality_model}) ---")
+                quality_prompt = (
+                    "Tu es un Senior Code Reviewer. Analyse uniquement le git diff ci-dessous représentant "
+                    "les modifications apportées au projet pour évaluer la qualité, la robustesse, "
+                    "l'absence de régression et le respect des conventions existantes. Sois intraitable sur les bugs :\n\n"
+                    f"GIT DIFF :\n{diff_content}"
+                )
+                t0 = time.perf_counter()
+                review_qualite = self.claude.run(quality_prompt, model=quality_model)
+                dur = time.perf_counter() - t0
+                report.review_qualite = review_qualite
+                self._record_step(
+                    report,
+                    f"CHECK_QUALITE_DIFF_CYCLE_{iter_count}",
+                    quality_model,
+                    quality_prompt,
+                    review_qualite,
+                    dur,
+                )
+
+                logger.info("Validation Qualité soumise à Jev (noul/binary)...")
+                decision_qualite = self.jev.validate(
+                    context=f"Git Diff :\n{diff_content}\n\nReview Qualité :\n{review_qualite}",
+                    criteria="Ce diff git est-il exempt de bugs, robuste et conforme aux critères de qualité logicielle ?",
+                )
+
+                if not decision_qualite:
+                    logger.warning(">>> Jev : REJET Qualité/Bug détecté sur le diff. Rollback Git en cours...")
+                    self.git.rollback()
+                    fb_prompt = (
+                        "Rédige un feedback correctif direct, concis et actionnable sous forme "
+                        "de liste à puces (bullet points) sans bavardage, à partir de cette review de qualité :\n\n"
+                        f"{review_qualite}"
+                    )
+                    t0 = time.perf_counter()
+                    dernier_feedback = self.claude.run(fb_prompt, model=feedback_bug_model)
+                    dur = time.perf_counter() - t0
+                    self._record_step(
+                        report,
+                        f"FEEDBACK_QUALITE_CYCLE_{iter_count}",
+                        feedback_bug_model,
+                        fb_prompt,
+                        dernier_feedback,
+                        dur,
+                    )
+                    etape = "DEV"
+                else:
+                    logger.info(">>> Jev : VALIDATION Qualité accordée sur le diff.")
+                    if is_simple:
+                        etape = "DOC_ET_COMMIT"
+                    else:
+                        etape = "CHECK_SECURITE"
+
+            # ---------------------------------------------------------------------
+            # Nœud : CHECK SÉCURITÉ SUR GIT DIFF
+            # ---------------------------------------------------------------------
+            elif etape == "CHECK_SECURITE":
+                logger.info(f"--- Cycle {iter_count} : CHECK SÉCURITÉ SUR GIT DIFF (Modèle: {security_model}) ---")
+                secu_prompt = (
+                    "Tu es un Expert en Cyber-Sécurité logicielle (AppSec). Analyse en profondeur "
+                    "ce git diff ainsi que sa review qualité préalable. Détecte toute vulnérabilité potentielle "
+                    "(injections, failles logiques, fuite de données, gestion non sécurisée des secrets, régressions) :\n\n"
+                    f"GIT DIFF :\n{diff_content}\n\n"
+                    f"REVIEW QUALITÉ PRÉALABLE :\n{review_qualite}"
+                )
+                t0 = time.perf_counter()
+                review_securite = self.claude.run(secu_prompt, model=security_model)
+                dur = time.perf_counter() - t0
+                report.review_securite = review_securite
+                self._record_step(
+                    report,
+                    f"CHECK_SECU_DIFF_CYCLE_{iter_count}",
+                    security_model,
+                    secu_prompt,
+                    review_securite,
+                    dur,
+                )
+
+                logger.info("Validation Sécurité soumise à Jev (noul/binary)...")
+                decision_secu = self.jev.validate(
+                    context=f"Git Diff :\n{diff_content}\n\nReview Sécurité :\n{review_securite}",
+                    criteria="Le code modifié dans ce git diff est-il sécurisé et exempt de toute vulnérabilité de sécurité ?",
+                )
+
+                if not decision_secu:
+                    logger.warning(">>> Jev : REJET Sécurité détecté sur le diff. Rollback Git en cours...")
+                    self.git.rollback()
+                    fb_secu_prompt = (
+                        "Rédige un feedback correctif de sécurité direct, concis et impératif sous "
+                        "forme de liste à puces (bullet points) à partir de cet audit de sécurité :\n\n"
+                        f"{review_securite}"
+                    )
+                    t0 = time.perf_counter()
+                    dernier_feedback = self.claude.run(fb_secu_prompt, model=feedback_secu_model)
+                    dur = time.perf_counter() - t0
+                    self._record_step(
+                        report,
+                        f"FEEDBACK_SECU_CYCLE_{iter_count}",
+                        feedback_secu_model,
+                        fb_secu_prompt,
+                        dernier_feedback,
+                        dur,
+                    )
+                    etape = "DEV"
+                else:
+                    logger.info(">>> Jev : VALIDATION Sécurité accordée sur le diff.")
+                    etape = "DOC_ET_COMMIT"
+
+        # =========================================================================
+        # ÉTAPE FINALE : Documentation et proposition de Commit Git
+        # =========================================================================
+        logger.info(f">>> Étape Finale : Création de la doc et du commit conventionnel (Modèle: {doc_commit_model})")
+        doc_prompt = (
+            "Tu es un Technical Writer & Git Master. À partir de ce git diff définitivement validé dans le projet, génère :\n"
+            "1. Une documentation technique concise des modifications apportées (fichiers touchés, comportement changé).\n"
+            "2. Un message de commit Git conventionnel complet (type(scope): subject, corps explicatif).\n\n"
+            f"GIT DIFF VALIDÉ :\n{diff_content}"
+        )
+        t0 = time.perf_counter()
+        doc_commit = self.claude.run(doc_prompt, model=doc_commit_model)
+        dur = time.perf_counter() - t0
+        report.doc_et_commit = doc_commit
+        self._record_step(report, "FINAL_DOC_ET_COMMIT", doc_commit_model, doc_prompt, doc_commit, dur)
+
+        # Application du commit automatique si demandée
+        if self.auto_commit and diff_content:
+            commit_subject = prompt_simple
+            for line in doc_commit.splitlines():
+                line_s = line.strip()
+                if line_s.startswith(("feat", "fix", "refactor", "chore", "perf", "style", "test", "docs")):
+                    commit_subject = line_s.strip("`*#")
+                    break
+            commit_hash = self.git.commit(f"{commit_subject}\n\n{prompt_simple}")
+            report.commit_hash = commit_hash
+
+        # Persistance disque si demandée
+        if self.workspace_dir:
+            self._persist_to_workspace(report)
+
+        report.is_success = True
+        logger.info(f"Workflow In-Repo complété avec succès en {iter_count} itération(s) !")
+        return report
+
+    def _run_standalone(
+        self,
+        prompt_simple: str,
+        report: WorkflowExecutionReport,
+        raise_on_failure: bool = False,
+    ) -> WorkflowExecutionReport:
+        """
+        Exécute le workflow en mode Standalone (génération d'un fichier neuf dans output/).
+        """
+        logger.info(f"Démarrage du workflow Standalone pour : '{prompt_simple[:60]}...'")
 
         # =========================================================================
         # ÉTAPE 1 : Création du prompt complexe / Spécification technique (Sonnet)
@@ -109,7 +486,6 @@ class MultiAgentOrchestrator:
 
         logger.info(f"Aiguillage Jev validé : Workflow={report.workflow_type.value}, Dev={report.dev_specialty.value}")
 
-        # Configuration de la matrice de modèles selon la branche
         is_complexe = (report.workflow_type == WorkflowType.COMPLEXE)
         is_simple = (report.workflow_type == WorkflowType.SIMPLE)
 
@@ -121,7 +497,7 @@ class MultiAgentOrchestrator:
         doc_commit_model = MODEL_SONNET if is_simple else MODEL_HAIKU
 
         # =========================================================================
-        # MACHINE À ÉTATS : DEV <-> QUALITÉ (<-> SÉCURITÉ)
+        # MACHINE À ÉTATS STANDALONE : DEV <-> QUALITÉ (<-> SÉCURITÉ)
         # =========================================================================
         etape = "DEV"
         code_produit = ""
@@ -140,6 +516,8 @@ class MultiAgentOrchestrator:
                 report.error_message = err
                 report.code_produit = code_produit
                 report.is_success = False
+                if raise_on_failure:
+                    raise WorkflowMaxRetriesExceeded(err)
                 return report
 
             # ---------------------------------------------------------------------
@@ -158,7 +536,6 @@ class MultiAgentOrchestrator:
                         "Fournis le code complet prêt pour la production."
                     )
                 else:
-                    # Garde-fou contexte : injection ciblée sans historique superflu
                     dev_prompt = (
                         f"Tu es un expert {report.dev_specialty.value}.\n"
                         f"Corrige et améliore le code existant pour résoudre rigoureusement les retours formulés ci-dessous.\n\n"
@@ -181,14 +558,11 @@ class MultiAgentOrchestrator:
                     dur,
                 )
 
-                # Reset du feedback consommé
                 dernier_feedback = ""
-                # Transition systématique vers le check qualité
                 etape = "CHECK_QUALITE"
 
             # ---------------------------------------------------------------------
             # Nœud : CHECK BUG / QUALITÉ
-            # Contrainte stricte : Ne reçoit QUE le résultat produit par le dev
             # ---------------------------------------------------------------------
             elif etape == "CHECK_QUALITE":
                 logger.info(f"--- Cycle {iter_count} : CHECK QUALITÉ (Modèle: {quality_model}) ---")
@@ -211,7 +585,6 @@ class MultiAgentOrchestrator:
                     dur,
                 )
 
-                # Décision binaire par JEV
                 logger.info("Validation Qualité / Bug soumise à Jev (noul/binary)...")
                 decision_qualite = self.jev.validate(
                     context=f"Code :\n{code_produit}\n\nReview Qualité :\n{review_qualite}",
@@ -220,7 +593,6 @@ class MultiAgentOrchestrator:
 
                 if not decision_qualite:
                     logger.warning(">>> Jev : REJET Qualité/Bug détecté.")
-                    # Génération du prompt de retour (Haiku ou Sonnet)
                     fb_prompt = (
                         "Rédige un feedback correctif direct, concis et actionnable sous forme "
                         "de liste à puces (bullet points) sans bavardage, à partir de cette review de qualité :\n\n"
@@ -237,20 +609,16 @@ class MultiAgentOrchestrator:
                         dernier_feedback,
                         dur,
                     )
-                    # Boucle de retour vers le DEV
                     etape = "DEV"
                 else:
                     logger.info(">>> Jev : VALIDATION Qualité/Bug accordée.")
                     if is_simple:
-                        # Tâche simple : pas de check sécurité -> Direct Doc & Commit
                         etape = "DOC_ET_COMMIT"
                     else:
-                        # Tâche moyenne ou complexe -> Check sécurité requis
                         etape = "CHECK_SECURITE"
 
             # ---------------------------------------------------------------------
-            # Nœud : CHECK SÉCURITÉ (Branches Moyenne & Complexe uniquement)
-            # Contrainte stricte : Reçoit le résultat ET la review qualité
+            # Nœud : CHECK SÉCURITÉ
             # ---------------------------------------------------------------------
             elif etape == "CHECK_SECURITE":
                 logger.info(f"--- Cycle {iter_count} : CHECK SÉCURITÉ (Modèle: {security_model}) ---")
@@ -274,7 +642,6 @@ class MultiAgentOrchestrator:
                     dur,
                 )
 
-                # Décision binaire sécurité par JEV
                 logger.info("Validation Sécurité soumise à Jev (noul/binary)...")
                 decision_secu = self.jev.validate(
                     context=f"Code :\n{code_produit}\n\nReview Sécurité :\n{review_securite}",
@@ -283,7 +650,6 @@ class MultiAgentOrchestrator:
 
                 if not decision_secu:
                     logger.warning(">>> Jev : REJET Sécurité détecté.")
-                    # Génération du prompt de retour sécurité (Haiku ou Sonnet)
                     fb_secu_prompt = (
                         "Rédige un feedback correctif de sécurité direct, concis et impératif sous "
                         "forme de liste à puces (bullet points) à partir de cet audit de sécurité :\n\n"
@@ -300,7 +666,6 @@ class MultiAgentOrchestrator:
                         dernier_feedback,
                         dur,
                     )
-                    # Retour au dev -> Repassera OBLIGATOIREMENT par CHECK_QUALITE
                     etape = "DEV"
                 else:
                     logger.info(">>> Jev : VALIDATION Sécurité accordée.")
@@ -370,17 +735,27 @@ class MultiAgentOrchestrator:
             ws_path = Path(self.workspace_dir)
             ws_path.mkdir(parents=True, exist_ok=True)
 
-            # 1. Sauvegarde du code produit
-            ext_map = {
-                DevSpecialty.PYTHON: ".py",
-                DevSpecialty.CSHARP: ".cs",
-                DevSpecialty.NODEJS: ".ts",
-                DevSpecialty.UI: ".tsx",
-            }
-            ext = ext_map.get(report.dev_specialty, ".txt")
-            code_file = ws_path / f"generated_solution{ext}"
-            code_file.write_text(report.code_produit, encoding="utf-8")
-            logger.info(f"Code produit sauvegardé dans : {code_file}")
+            if report.is_in_repo:
+                # Mode In-Repo : Sauvegarde du diff dans le workspace
+                diff_file = ws_path / "LATEST_PATCH.diff"
+                diff_file.write_text(report.git_diff, encoding="utf-8")
+                logger.info(f"Patch git validé sauvegardé dans : {diff_file}")
+            else:
+                # Mode Standalone : Sauvegarde du code produit nettoyé de ses balises markdown
+                cleaned_code, detected_lang = clean_code_output(report.code_produit)
+                ext = LANG_TO_EXT.get(detected_lang) if detected_lang else None
+                if not ext:
+                    ext_map = {
+                        DevSpecialty.PYTHON: ".py",
+                        DevSpecialty.CSHARP: ".cs",
+                        DevSpecialty.NODEJS: ".ts",
+                        DevSpecialty.UI: ".tsx",
+                    }
+                    ext = ext_map.get(report.dev_specialty, ".txt")
+
+                code_file = ws_path / f"generated_solution{ext}"
+                code_file.write_text(cleaned_code, encoding="utf-8")
+                logger.info(f"Code produit sauvegardé dans : {code_file}")
 
             # 2. Sauvegarde de la documentation
             doc_file = ws_path / "GENERATED_DOC.md"
@@ -391,14 +766,19 @@ class MultiAgentOrchestrator:
             report_file = ws_path / "WORKFLOW_AUDIT.md"
             lines = [
                 f"# Rapport d'Exécution Multi-Agents",
+                f"- **Mode :** {'In-Repo (Modifications directes)' if report.is_in_repo else 'Standalone'}",
                 f"- **Prompt Initial :** {report.prompt_simple}",
                 f"- **Type de Workflow :** {report.workflow_type.value if report.workflow_type else 'N/A'}",
                 f"- **Spécialité :** {report.dev_specialty.value if report.dev_specialty else 'N/A'}",
                 f"- **Itérations :** {report.iterations_count}",
                 f"- **Étapes exécutées :** {len(report.history)}",
-                "",
-                "## Historique des étapes :",
             ]
+            if report.is_in_repo:
+                lines.append(f"- **Dépôt cible :** {report.project_dir}")
+                lines.append(f"- **Fichiers modifiés :** {', '.join(report.modified_files) if report.modified_files else 'Aucun'}")
+                if report.commit_hash:
+                    lines.append(f"- **Commit Git créé :** `{report.commit_hash}`")
+            lines.extend(["", "## Historique des étapes :"])
             for step in report.history:
                 lines.append(f"- **{step.step_name}** ({step.model}, {step.duration_seconds:.2f}s)")
             report_file.write_text("\n".join(lines), encoding="utf-8")

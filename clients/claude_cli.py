@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import time
+from pathlib import Path
 from typing import Optional
 
 from config import CLAUDE_BIN_PATH, CLAUDE_TIMEOUT_SECONDS, MOCK_SERVICES
@@ -43,12 +44,14 @@ class ClaudeCliClient:
         model: str,
         system_prompt: Optional[str] = None,
         cwd: Optional[str] = None,
+        tools: Optional[str] = None,
+        permission_mode: Optional[str] = None,
     ) -> str:
         """
         Exécute une invite via le CLI Claude en mode headless (-p).
         """
         if self.mock_mode:
-            return self._mock_response(prompt, model)
+            return self._mock_response(prompt, model, cwd=cwd)
 
         cmd = [
             self.binary_path,
@@ -63,6 +66,10 @@ class ClaudeCliClient:
 
         if system_prompt:
             cmd.extend(["--system-prompt", system_prompt])
+        if tools:
+            cmd.extend(["--tools", tools])
+        if permission_mode:
+            cmd.extend(["--permission-mode", permission_mode])
 
         logger.debug(f"Exécution Claude CLI : model={model}, cmd={' '.join(cmd[:4])}...")
         start_t = time.perf_counter()
@@ -120,32 +127,115 @@ class ClaudeCliClient:
         try:
             data = json.loads(raw_stdout)
             if isinstance(data, dict):
-                # Claude Code JSON format standard : champ "result"
-                if "result" in data:
-                    return str(data["result"]).strip()
-                if "text" in data:
-                    return str(data["text"]).strip()
-                if "content" in data:
-                    return str(data["content"]).strip()
+                for key in ("result", "text", "content"):
+                    if key in data:
+                        return str(data[key]).strip()
         except json.JSONDecodeError:
             pass
 
-        # Tentative 2 : Recherche d'un bloc JSON encadré dans la sortie
-        json_match = re.search(r"\{.*\}", raw_stdout, re.DOTALL)
-        if json_match:
+        # Tentative 2 : Recherche d'un objet JSON ligne par ligne (en partant de la fin)
+        for line in reversed(raw_stdout.splitlines()):
+            line_s = line.strip()
+            if line_s.startswith("{") and line_s.endswith("}"):
+                try:
+                    data = json.loads(line_s)
+                    if isinstance(data, dict):
+                        for key in ("result", "text", "content"):
+                            if key in data:
+                                return str(data[key]).strip()
+                except json.JSONDecodeError:
+                    continue
+
+        # Tentative 3 : Recherche ciblée de bloc JSON avec les clés attendues
+        # Évite le re.DOTALL glouton qui casse dès qu'il y a des accolades dans le code généré
+        json_pattern = r'\{[\s\S]*?"(?:result|text|content)"[\s\S]*?\}'
+        for match in re.finditer(json_pattern, raw_stdout):
             try:
-                data = json.loads(json_match.group(0))
-                if isinstance(data, dict) and "result" in data:
-                    return str(data["result"]).strip()
+                data = json.loads(match.group(0))
+                if isinstance(data, dict):
+                    for key in ("result", "text", "content"):
+                        if key in data:
+                            return str(data[key]).strip()
             except json.JSONDecodeError:
-                pass
+                continue
 
         # Fallback : Sortie texte directe brute
         return raw_stdout
 
-    def _mock_response(self, prompt: str, model: str) -> str:
+    def _mock_response(self, prompt: str, model: str, cwd: Optional[str] = None) -> str:
         """Génère une réponse synthétique cohérente pour tests et simulation."""
         prompt_lower = prompt.lower()
+
+        # Phase In-Repo : Exploration & Localisation
+        if "explore le codebase" in prompt_lower:
+            target_file = "src/components/TabX.tsx"
+            if cwd:
+                cwd_path = Path(cwd)
+                all_files = [
+                    p for p in cwd_path.rglob("*")
+                    if p.is_file() and not p.name.startswith(".") and ".git" not in p.parts
+                ]
+                matched = None
+                for f in all_files:
+                    f_name = f.name.lower()
+                    if "tabx" in f_name or "tab_x" in f_name or ("tab" in f_name and "x" in prompt_lower):
+                        matched = f
+                        break
+                if not matched:
+                    code_files = [f for f in all_files if f.suffix in (".tsx", ".ts", ".py", ".js", ".cs")]
+                    if code_files:
+                        matched = code_files[0]
+                if not matched and all_files:
+                    matched = all_files[0]
+
+                if matched:
+                    target_file = matched.relative_to(cwd_path).as_posix()
+
+            return (
+                f"# Spécification & Localisation In-Situ\n\n"
+                f"## Fichiers Cibles Identifiés\n- `{target_file}`\n\n"
+                f"## Analyse du Code Existant\nComposant localisé avec fonction de traitement/tri ciblée.\n\n"
+                f"## Plan de Modification\n1. Modifier la fonction ciblée dans `{target_file}`.\n"
+                f"2. Assurer la conformité du contrat d'interface et l'absence de régression."
+            )
+
+        # Phase In-Repo : Développement In-Situ
+        if "applique directement les modifications" in prompt_lower or "in-situ" in prompt_lower:
+            if cwd:
+                cwd_path = Path(cwd)
+                all_files = [
+                    p for p in cwd_path.rglob("*")
+                    if p.is_file() and not p.name.startswith(".") and ".git" not in p.parts
+                ]
+                target = None
+                for f in all_files:
+                    rel_name = f.relative_to(cwd_path).as_posix()
+                    if rel_name in prompt or f.name in prompt:
+                        target = f
+                        break
+                    if "tabx" in f.name.lower() or "tab_x" in f.name.lower():
+                        target = f
+                        break
+
+                if not target:
+                    code_files = [f for f in all_files if f.suffix in (".tsx", ".ts", ".py", ".js", ".cs")]
+                    if code_files:
+                        target = code_files[0]
+                if not target and all_files:
+                    target = all_files[0]
+
+                if target:
+                    content = target.read_text(encoding="utf-8", errors="replace")
+                    if "sort" in content:
+                        new_content = content.replace(".sort(", ".sort((a, b) => b.date - a.date) /* in-situ edit */\n// ")
+                        if new_content == content:
+                            new_content = content.replace("sort(", "sort((a, b) => b.date - a.date) /* in-situ edit */\n// ")
+                    else:
+                        new_content = content + "\n\n// Modification in-situ appliquée avec succès (date décroissante)\nexport const sortItems = (items) => [...items].sort((a, b) => b.date - a.date);\n"
+                    target.write_text(new_content, encoding="utf-8")
+                    return f"Modifications in-situ appliquées avec succès dans : {target.relative_to(cwd_path)}"
+
+            return "Modifications in-situ appliquées avec succès dans le projet."
 
         if "lead software architect" in prompt_lower or "spécification technique d'implémentation" in prompt_lower:
             return (

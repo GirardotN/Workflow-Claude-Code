@@ -40,3 +40,7 @@ htmlcov/
 .idea/
 .DS_Store
 *.swp
+
+# Output artifacts
+output/*
+!output/.gitkeep

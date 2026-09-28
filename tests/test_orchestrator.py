@@ -7,8 +7,14 @@ les modèles assignés, l'isolation des contextes et les boucles de feedback.
 import unittest
 from unittest.mock import MagicMock
 
+from clients.claude_cli import ClaudeCliClient
+from clients.jev_client import JevClient
 from models import DevSpecialty, WorkflowType
-from orchestrator import MultiAgentOrchestrator
+from orchestrator import (
+    MultiAgentOrchestrator,
+    WorkflowMaxRetriesExceeded,
+    clean_code_output,
+)
 
 
 class MockClaudeClient:
@@ -198,6 +204,69 @@ class TestMultiAgentWorkflow(unittest.TestCase):
         self.assertFalse(report.is_success)
         self.assertEqual(report.iterations_count, 3)
         self.assertIn("Circuit breaker", report.error_message)
+
+    def test_circuit_breaker_raise_on_failure(self):
+        """
+        Vérifie que WorkflowMaxRetriesExceeded est levée si raise_on_failure=True.
+        """
+        self.jev.classification_type = WorkflowType.SIMPLE.value
+        self.jev.quality_validations = [False, False, False, False, False]
+        self.orchestrator.max_retries = 2
+
+        with self.assertRaises(WorkflowMaxRetriesExceeded):
+            self.orchestrator.run("Tâche qui échoue", raise_on_failure=True)
+
+    def test_dev_specialty_no_false_positive_on_ui(self):
+        """
+        Vérifie que des termes français contenant 'ui' (requis, construire, suivant)
+        ne sont pas faussement classés en Dev UI.
+        """
+        jev = JevClient(mock_mode=True)
+        choices = ["Dev C#", "Dev Node.js", "Dev UI", "Dev Python"]
+
+        spec_text = "Composants requis : gestionnaire de calculs suivant les normes"
+        classified = jev.classify(spec_text, choices)
+        self.assertNotEqual(classified, "Dev UI")
+
+        # Test direct dans models.py
+        self.assertNotEqual(DevSpecialty.from_str("module de traitement requis"), DevSpecialty.UI)
+        self.assertEqual(DevSpecialty.from_str("composant UI react"), DevSpecialty.UI)
+
+    def test_clean_code_output_strips_markdown_fences(self):
+        """
+        Vérifie que les balises markdown ```python sont correctement retirées
+        et que le langage est détecté.
+        """
+        raw_markdown = "```python\ndef hello():\n    return 'world'\n```"
+        code, lang = clean_code_output(raw_markdown)
+        self.assertEqual(lang, "python")
+        self.assertNotIn("```", code)
+        self.assertIn("def hello():", code)
+
+        plain_code = "const x = 42;"
+        code2, lang2 = clean_code_output(plain_code)
+        self.assertIsNone(lang2)
+        self.assertEqual(code2, plain_code)
+
+    def test_mock_validate_prioritizes_critical_rejection(self):
+        """
+        Vérifie que _mock_validate rejette un code comportant une vulnérabilité critique
+        même s'il mentionne 'aucun bug'.
+        """
+        jev = JevClient(mock_mode=True)
+        review = "Aucun bug de syntaxe détecté, mais présence d'une faille critique d'injection."
+        is_valid = jev._mock_validate(review, "criteria")
+        self.assertFalse(is_valid)
+
+    def test_claude_cli_extract_result_with_braces(self):
+        """
+        Vérifie que l'extraction JSON de ClaudeCliClient n'est pas corrompue
+        par du code contenant des accolades.
+        """
+        client = ClaudeCliClient(mock_mode=False)
+        raw_output = '{"result": "class Foo { int x = {1}; }"}'
+        extracted = client._extract_result(raw_output)
+        self.assertEqual(extracted, "class Foo { int x = {1}; }")
 
 
 if __name__ == "__main__":

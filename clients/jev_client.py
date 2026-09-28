@@ -6,6 +6,7 @@ schéma direct (/v1/decide), avec gestion d'erreurs et mode simulation/mock.
 
 import json
 import logging
+import re
 import time
 from typing import Any, Dict, List, Optional
 import requests
@@ -202,9 +203,9 @@ class JevClient:
         if "dev c#" in [c.lower() for c in choices]:
             if "c#" in ctx_lower or ".net" in ctx_lower:
                 return "Dev C#"
-            if "node" in ctx_lower or "javascript" in ctx_lower or "typescript" in ctx_lower:
+            if re.search(r"\b(node|nodejs|js|javascript|typescript)\b", ctx_lower):
                 return "Dev Node.js"
-            if "ui" in ctx_lower or "frontend" in ctx_lower or "html" in ctx_lower or "css" in ctx_lower:
+            if re.search(r"\b(ui|frontend|front-end|react|vue|html|css)\b", ctx_lower):
                 return "Dev UI"
             return "Dev Python"
 
@@ -214,13 +215,20 @@ class JevClient:
         """Simulation heuristique de validation binaire."""
         ctx_lower = context.lower()
 
-        # Détection de signaux d'anomalie réels (en évitant 'aucun bug', 'aucune faille')
+        # 1. Détection prioritaire des signaux d'anomalie réels et rejets bloquants
+        rejection_signals = [
+            "erreur critique",
+            "faille critique",
+            "vulnérabilité critique",
+            "code non conforme",
+            "rejet obligatoire",
+        ]
+        if any(signal in ctx_lower for signal in rejection_signals):
+            return False
+
+        # 2. Validation si signaux positifs présents
         if "aucun bug" in ctx_lower or "conforme aux exigences" in ctx_lower:
             return True
-        if "erreur critique" in ctx_lower or "faille critique" in ctx_lower or "vulnérabilité critique" in ctx_lower:
-            return False
-        if "code non conforme" in ctx_lower or "rejet obligatoire" in ctx_lower:
-            return False
 
         # Par défaut, validation accordée
         return True

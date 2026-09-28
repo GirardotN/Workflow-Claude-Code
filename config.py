@@ -38,13 +38,24 @@ def _find_claude_binary() -> str:
         return which_path
 
     # 3. Emplacements standards connus (Linux, macOS, Windows)
+    # Détection dynamique dans ~/.config/Claude/claude-code/<version>/claude
+    claude_code_dir = Path.home() / ".config" / "Claude" / "claude-code"
+    if claude_code_dir.is_dir():
+        try:
+            version_dirs = sorted([d for d in claude_code_dir.iterdir() if d.is_dir()], reverse=True)
+            for vdir in version_dirs:
+                bin_file = vdir / "claude"
+                if bin_file.is_file() and (os.name == "nt" or os.access(bin_file, os.X_OK)):
+                    return str(bin_file)
+        except Exception:
+            pass
+
     appdata = os.getenv("APPDATA", "")
     localappdata = os.getenv("LOCALAPPDATA", "")
     program_files = os.getenv("ProgramFiles", "C:\\Program Files")
 
     candidates = [
         # Linux / macOS
-        Path.home() / ".config" / "Claude" / "claude-code" / "2.1.260" / "claude",
         Path.home() / ".local" / "bin" / "claude",
         Path("/usr/local/bin/claude"),
         Path.home() / ".npm-global" / "bin" / "claude",
@@ -84,3 +95,6 @@ MOCK_SERVICES = os.getenv("MOCK_SERVICES", "0").lower() in ("1", "true", "yes")
 MODEL_SONNET = "sonnet"
 MODEL_OPUS = "opus"
 MODEL_HAIKU = "haiku"
+
+# Répertoire cible du projet à inspecter / modifier
+DEFAULT_PROJECT_DIR = os.getenv("PROJECT_DIR", ".")

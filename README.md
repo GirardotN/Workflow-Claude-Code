@@ -184,7 +184,7 @@ pip install -r requirements.txt
 
 ## ⚙️ Configuration (`.env`)
 
-Copiez le modèle [.env.example](file:///home/depinfo/Bureau/Test%20workflow/.env.example) vers `.env` :
+Copiez le modèle [.env.example](.env.example) vers `.env` :
 
 ```bash
 cp .env.example .env     # Linux / macOS
@@ -207,39 +207,51 @@ Ajustez les variables selon vos besoins :
 
 ## 💻 Guide d'Utilisation
 
-### 1. Exécution Standard (En Production)
+### 1. Mode In-Repo sur un Projet Existant (Recommandé)
 
-Fournissez simplement une consigne en langage naturel décrivant votre besoin :
-
-```bash
-# Linux / macOS
-python3 cli.py "Créer un service FastAPI d'authentification JWT avec rate limiting Redis"
-
-# Windows
-python cli.py "Créer un service FastAPI d'authentification JWT avec rate limiting Redis"
-```
-
-### 2. Mode Simulation / Hors Ligne (`--mock`)
-
-Le mode `--mock` permet de tester le flux de la machine à états, le routage et la génération d'artefacts localement, de façon instantanée, sans dépendre du réseau ni consommer de session CLI :
+Déployez l'orchestrateur directement sur une base de code existante comportant des dizaines de fichiers. L'agent explore l'arborescence, localise les fonctions ou composants cibles, applique les modifications chirurgicales in-situ et valide le résultat sur le **`git diff`** réel avec rollback automatique en cas de rejet :
 
 ```bash
-python3 cli.py --mock "Créer un composant React de tableau de bord avec graphiques interactifs"
+# Explorer le projet, modifier le fichier cible et afficher le git diff validé :
+python3 cli.py --project-dir /chemin/vers/mon-projet "Modifie la fonction de tri dans l'onglet x pour trier par date décroissante"
+
+# Option --commit : Appliquer automatiquement le commit conventionnel dans l'historique Git :
+python3 cli.py --project-dir /chemin/vers/mon-projet --commit "Modifie la fonction de tri dans l'onglet x pour trier par date décroissante"
 ```
 
-### 3. Options de la Ligne de Commande
+### 2. Mode Standalone (Génération d'un fichier neuf)
+
+Pour générer un module autonome sans intervenir sur un projet existant :
+
+```bash
+python3 cli.py --standalone "Créer un service FastAPI d'authentification JWT avec rate limiting Redis"
+```
+
+### 3. Mode Simulation / Hors Ligne (`--mock`)
+
+Le mode `--mock` permet de tester le flux de la machine à états, le routage et les modifications in-situ localement, de façon instantanée, sans dépendre du réseau ni consommer de session CLI :
+
+```bash
+python3 cli.py --mock --project-dir /chemin/vers/mon-projet "Modifie la fonction de tri dans l'onglet x"
+```
+
+### 4. Options de la Ligne de Commande
 
 ```text
-usage: cli.py [-h] [--mock] [--max-retries MAX_RETRIES] [--workspace WORKSPACE] [-v] [prompt]
+usage: cli.py [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT_DIR]
+              [--standalone] [--commit] [--workspace WORKSPACE] [-v] [prompt]
 
 Arguments positionnels :
-  prompt                 Prompt simple décrivant la tâche de développement
+  prompt                 Prompt simple décrivant la tâche de développement ou de refactoring
 
 Options :
   -h, --help             Affiche l'aide et quitte
   --mock                 Exécute le workflow en mode simulation
   --max-retries N        Nombre maximum d'allers-retours de feedback (défaut : 4)
-  --workspace DOSSIER    Répertoire de destination des artefacts générés (défaut : ./output)
+  --project-dir DOSSIER  Répertoire du projet existant à modifier (active le mode In-Repo si sous Git)
+  --standalone           Forcer le mode autonome (génération d'un fichier dans output/ au lieu d'éditer le projet)
+  --commit               Créer automatiquement le commit Git conventionnel si les modifications sont validées
+  --workspace DOSSIER    Répertoire où persister le rapport d'audit et la documentation (défaut : ./output)
   -v, --verbose          Active la journalisation détaillée (DEBUG)
 ```
 
@@ -249,9 +261,11 @@ Options :
 
 À la fin de chaque exécution validée, les fichiers suivants sont persistés dans le dossier spécifié (`./output` par défaut) :
 
-1. **`generated_solution.<ext>`** : Le code source complet produit par l'agent développeur spécialisé (extension automatique : `.py`, `.ts`, `.tsx`, `.cs`).
-2. **`GENERATED_DOC.md`** : La documentation technique d'utilisation accompagnée de la proposition de message de commit Git au format *Conventional Commits*.
-3. **`WORKFLOW_AUDIT.md`** : Le journal d'audit complet retraçant chaque étape chronométrée, les modèles assignés et les validations accordées par Jev.
+1. **`LATEST_PATCH.diff`** *(Mode In-Repo)* : Le patch Git exact appliqué aux fichiers du projet.
+2. **`generated_solution.<ext>`** *(Mode Standalone)* : Le code source complet produit (extension automatique : `.py`, `.ts`, `.tsx`, `.cs`).
+3. **`GENERATED_DOC.md`** : La documentation technique d'utilisation accompagnée de la proposition de message de commit Git au format *Conventional Commits*.
+4. **`WORKFLOW_AUDIT.md`** : Le journal d'audit complet retraçant chaque étape chronométrée, les modèles assignés, les fichiers modifiés et les validations accordées par Jev.
+
 
 ---
 

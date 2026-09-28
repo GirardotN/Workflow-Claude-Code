@@ -72,10 +72,26 @@ def main():
         help=f"Nombre maximum d'allers-retours de feedback (défaut: {MAX_RETRIES})",
     )
     parser.add_argument(
+        "--project-dir",
+        type=str,
+        default=None,
+        help="Répertoire du projet existant à modifier (active le mode In-Repo si sous Git)",
+    )
+    parser.add_argument(
+        "--standalone",
+        action="store_true",
+        help="Forcer le mode autonome (génération d'un fichier dans output/ au lieu d'éditer le projet)",
+    )
+    parser.add_argument(
+        "--commit",
+        action="store_true",
+        help="Créer automatiquement le commit Git conventionnel si les modifications sont validées",
+    )
+    parser.add_argument(
         "--workspace",
         type=str,
         default="./output",
-        help="Répertoire où persister le code et la documentation générés",
+        help="Répertoire où persister le rapport d'audit et la documentation",
     )
     parser.add_argument(
         "-v", "--verbose",
@@ -91,6 +107,9 @@ def main():
     print("=" * 70)
     print(f"• Prompt initial   : {args.prompt}")
     print(f"• Mode simulation  : {'OUI (--mock)' if args.mock else 'NON (Claude CLI + TypeSafe API)'}")
+    print(f"• Mode de travail  : {'Standalone forcé (--standalone)' if args.standalone else ('In-Repo: ' + args.project_dir if args.project_dir else 'Auto (In-Repo si dépôt Git)')}")
+    if args.commit:
+        print("• Auto-commit Git  : Activé (--commit)")
     print(f"• Claude CLI path  : {CLAUDE_BIN_PATH}")
     print(f"• TypeSafe API Key : {'Définie' if TYPESAFE_API_KEY else 'Non configurée (fallback mock auto)'}")
     print(f"• Max Retries      : {args.max_retries}")
@@ -105,6 +124,9 @@ def main():
         jev_client=jev_client,
         max_retries=args.max_retries,
         workspace_dir=args.workspace,
+        project_dir=args.project_dir or ".",
+        standalone_mode=args.standalone,
+        auto_commit=args.commit,
         on_step_callback=print_step,
     )
 
@@ -120,13 +142,24 @@ def main():
     else:
         print(f"⚠️ WORKFLOW INCOMPLET : {report.error_message}")
     print("=" * 70)
+    print(f"• Mode effectif    : {'In-Repo (Modifications directes dans le projet)' if report.is_in_repo else 'Standalone (Fichier unique dans output/)'}")
     print(f"• Type de workflow : {report.workflow_type.value if report.workflow_type else 'N/A'}")
     print(f"• Développeur       : {report.dev_specialty.value if report.dev_specialty else 'N/A'}")
     print(f"• Cycles exécutés  : {report.iterations_count}")
     print(f"• Total étapes     : {len(report.history)}")
 
-    print("\n--- CODE PRODUIT ---")
-    print(report.code_produit[:600] + ("\n... [tronqué pour affichage]" if len(report.code_produit) > 600 else ""))
+    if report.is_in_repo:
+        print(f"• Dépôt cible      : {report.project_dir}")
+        print(f"• Fichiers modifiés: {', '.join(report.modified_files) if report.modified_files else 'Aucun'}")
+        if report.commit_hash:
+            print(f"• Commit Git créé  : [{report.commit_hash}]")
+
+        if report.git_diff:
+            print("\n--- GIT DIFF DES MODIFICATIONS IN-SITU ---")
+            print(report.git_diff[:1200] + ("\n... [tronqué pour affichage]" if len(report.git_diff) > 1200 else ""))
+    else:
+        print("\n--- CODE PRODUIT ---")
+        print(report.code_produit[:600] + ("\n... [tronqué pour affichage]" if len(report.code_produit) > 600 else ""))
 
     print("\n--- DOCUMENTATION & COMMIT GIT ---")
     print(report.doc_et_commit)
