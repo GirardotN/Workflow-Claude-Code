@@ -71,15 +71,18 @@ class GitClient:
 
     def get_diff(self) -> str:
         """
-        Récupère l'intégralité du git diff (modifications indexées et non indexées)
-        par rapport à HEAD.
+        Récupère l'intégralité du git diff (modifications indexées, non indexées
+        et nouveaux fichiers créés) par rapport à HEAD.
         """
         try:
-            # 1. Diff complet par rapport à HEAD si des commits existent
+            # 1. Indexe les fichiers non suivis avec intent-to-add afin qu'ils apparaissent dans git diff
+            self._run_git(["add", "-N", "."], check=False)
+
+            # 2. Diff complet par rapport à HEAD si des commits existent
             diff = self._run_git(["diff", "HEAD"], check=False)
             if diff:
                 return diff
-            # 2. Si HEAD n'existe pas encore (dépôt vide), diff classique
+            # 3. Si HEAD n'existe pas encore (dépôt vide), diff classique
             return self._run_git(["diff"], check=False)
         except Exception as e:
             logger.warning(f"Impossible de récupérer le git diff : {e}")
@@ -110,9 +113,10 @@ class GitClient:
         try:
             # 1. Restauration des fichiers modifiés
             # Essai avec 'git restore .' (Git moderne >= 2.23)
-            res = self._run_git(["restore", "."], check=False)
-            if not res:
-                # Fallback pour versions antérieures de git
+            try:
+                self._run_git(["restore", "."])
+            except GitClientError:
+                # Fallback pour versions antérieures de git (< 2.23)
                 self._run_git(["checkout", "--", "."], check=False)
 
             # 2. Nettoyage des fichiers non suivis
@@ -120,6 +124,7 @@ class GitClient:
             logger.info("Rollback Git complété : répertoire propre.")
         except Exception as e:
             logger.error(f"Erreur lors du rollback Git : {e}")
+
 
     def commit(self, message: str) -> Optional[str]:
         """

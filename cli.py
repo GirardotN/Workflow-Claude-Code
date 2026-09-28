@@ -246,7 +246,11 @@ def main():
                 else:
                     print(f"⚠️ Échec du merge automatique. Vous pouvez inspecter la branche : git checkout {report.branch_name}")
             else:
-                print(f"ℹ️ Branche conservée. Pour la fusionner manuellement :\n  git checkout {report.original_branch}\n  git merge {report.branch_name}")
+                print(f"ℹ️ Branche '{report.branch_name}' conservée. Pour la fusionner manuellement :\n  git checkout {report.original_branch}\n  git merge {report.branch_name}")
+                if confirm_action(f"Souhaitez-vous revenir sur votre branche d'origine '{report.original_branch}' ?", default=True):
+                    git_c = GitClient(report.project_dir)
+                    git_c.checkout_branch(report.original_branch)
+                    print(f"✅ Vous êtes de retour sur '{report.original_branch}'.")
             print("-" * 70)
 
     else:

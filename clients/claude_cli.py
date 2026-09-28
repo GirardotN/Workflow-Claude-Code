@@ -75,15 +75,19 @@ class ClaudeCliClient:
         start_t = time.perf_counter()
 
         try:
-            # Sur Windows, les exécutables npm globaux sont des scripts .cmd/.bat nécessitant shell=True
-            use_shell = os.name == "nt"
+            # Sur Windows, si le binaire est un script .cmd/.bat, invocation sécurisée sans shell=True
+            exec_cmd = cmd
+            if os.name == "nt" and self.binary_path.lower().endswith((".cmd", ".bat")):
+                comspec = os.environ.get("COMSPEC", "cmd.exe")
+                exec_cmd = [comspec, "/d", "/c", self.binary_path] + cmd[1:]
+
             proc = subprocess.run(
-                cmd,
+                exec_cmd,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                shell=use_shell,
+                shell=False,
                 cwd=cwd,
                 timeout=self.timeout_seconds,
             )
@@ -146,18 +150,41 @@ class ClaudeCliClient:
                 except json.JSONDecodeError:
                     continue
 
-        # Tentative 3 : Recherche ciblée de bloc JSON avec les clés attendues
-        # Évite le re.DOTALL glouton qui casse dès qu'il y a des accolades dans le code généré
-        json_pattern = r'\{[\s\S]*?"(?:result|text|content)"[\s\S]*?\}'
-        for match in re.finditer(json_pattern, raw_stdout):
-            try:
-                data = json.loads(match.group(0))
-                if isinstance(data, dict):
-                    for key in ("result", "text", "content"):
-                        if key in data:
-                            return str(data[key]).strip()
-            except json.JSONDecodeError:
-                continue
+        # Tentative 3 : Extraction lexicale par profondeur d'accolades équilibrées
+        # Évite les erreurs des regex non-gloutonnes face aux accolades imbriquées dans le code
+        start_idx = raw_stdout.find("{")
+        while start_idx != -1:
+            depth = 0
+            in_string = False
+            escape = False
+            for i in range(start_idx, len(raw_stdout)):
+                char = raw_stdout[i]
+                if escape:
+                    escape = False
+                    continue
+                if char == "\\":
+                    escape = True
+                    continue
+                if char == '"':
+                    in_string = not in_string
+                    continue
+                if not in_string:
+                    if char == "{":
+                        depth += 1
+                    elif char == "}":
+                        depth -= 1
+                        if depth == 0:
+                            candidate = raw_stdout[start_idx : i + 1]
+                            try:
+                                data = json.loads(candidate)
+                                if isinstance(data, dict):
+                                    for key in ("result", "text", "content"):
+                                        if key in data:
+                                            return str(data[key]).strip()
+                            except json.JSONDecodeError:
+                                pass
+                            break
+            start_idx = raw_stdout.find("{", start_idx + 1)
 
         # Fallback : Sortie texte directe brute
         return raw_stdout

@@ -256,7 +256,23 @@ class TestInRepoWorkflow(unittest.TestCase):
         self.assertIn("DEV_IN_SITU_CYCLE_2", step_names)
         self.assertIn("TESTS_PASSED_CYCLE_2", step_names)
 
+    def test_in_repo_untracked_new_file_captured_in_diff(self):
+        """
+        Vérifie que la création d'un tout nouveau fichier (non suivi/untracked)
+        est immédiatement capturée dans git diff grâce à git add -N.
+        """
+        new_file = self.repo_path / "src" / "components" / "NewBrandComponent.tsx"
+        new_file.write_text("export const NewBrandComponent = () => <div>Brand New</div>;\n", encoding="utf-8")
+
+        # À ce stade, le fichier n'est pas indexé (untracked)
+        diff = self.git.get_diff()
+
+        # Le diff doit impérativement contenir le nouveau fichier et son contenu
+        self.assertIn("NewBrandComponent.tsx", diff)
+        self.assertIn("Brand New", diff)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

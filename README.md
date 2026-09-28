@@ -110,20 +110,29 @@ flowchart TD
 
 ```text
 .
-├── cli.py                     # Point d'entrée en ligne de commande (CLI interactif, options, gestion UTF-8)
-├── orchestrator.py            # Moteur de machine à états finis, isolation des contextes et persistance disque
+├── cli.py                     # Point d'entrée CLI (arguments, mode batch -y, gestion branches et encodage UTF-8)
+├── orchestrator.py            # Moteur FSM, isolation par branche Git, boucle de feedback de tests et circuit breaker
 ├── models.py                  # Modèles de données typés (WorkflowType, DevSpecialty, StepRecord, Report)
-├── config.py                  # Configuration globale, détection multiplateforme de Claude et parser .env
+├── config.py                  # Configuration globale, détection automatique de Claude Code et parser .env / JSON
 ├── clients/
-│   ├── claude_cli.py          # Wrapper subprocess pour le CLI Claude Code headless (-p, cross-platform)
-│   └── jev_client.py          # Client API HTTP TypeSafe Jev (System One / Decide + mock heuristique)
+│   ├── __init__.py            # Initialisation formelle du paquet clients
+│   ├── claude_cli.py          # Wrapper headless Claude Code (parser lexical JSON à balance d'accolades)
+│   ├── jev_client.py          # Client API HTTP TypeSafe Jev (System One / Decide + mock heuristique)
+│   ├── git_client.py          # Gestion Git (isolation transactionnelle, intent-to-add, diff, rollback, merge)
+│   └── test_runner.py         # Détecteur multi-écosystèmes et exécuteur de tests (pytest, npm, cargo, go)
+├── ui/
+│   ├── __init__.py            # Initialisation du paquet ui
+│   └── terminal.py            # Spinner animé dynamique, diff coloré ANSI et confirmations interactives
 ├── tests/
-│   └── test_orchestrator.py   # Suite de tests unitaires (couverture complète des 3 branches et isolation)
-├── output/                    # Dossier des artefacts persistés (code produit, documentation, rapport d'audit)
-├── sp_cification_proposition_d_architecture_multi_agents.md  # Spécification technique source du projet
+│   ├── test_orchestrator.py   # Tests unitaires des branches, circuit breaker, typage et isolation cognitive
+│   ├── test_in_repo.py        # Tests du mode In-Repo (modifications in-situ, rollback, auto-commit, untracked)
+│   └── test_test_runner.py    # Tests de détection et d'exécution du runner de tests
+├── output/                    # Dossier des artefacts persistés (patchs, documentation, rapports)
+├── pyproject.toml             # Configuration standard PEP 621 et points d'entrée console (workflow, workflow-claude)
+├── requirements.txt           # Dépendances Python minimales (requests, python-dotenv)
+├── LICENSE                    # Licence MIT
 ├── .env.example               # Modèle des variables d'environnement
-├── requirements.txt           # Dépendances Python minimales
-└── .gitignore                 # Exclusions Git (fichiers temporaires, caches, venv)
+└── .gitignore                 # Exclusions Git
 ```
 
 ---

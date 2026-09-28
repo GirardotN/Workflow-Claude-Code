@@ -268,6 +268,22 @@ class TestMultiAgentWorkflow(unittest.TestCase):
         extracted = client._extract_result(raw_output)
         self.assertEqual(extracted, "class Foo { int x = {1}; }")
 
+    def test_claude_cli_extract_result_with_prelude_and_nested_braces(self):
+        """
+        Vérifie que l'extracteur lexical d'accolades équilibrées extrait le bon JSON
+        même si la sortie est précédée de logs et contient de nombreuses accolades imbriquées.
+        """
+        client = ClaudeCliClient(mock_mode=False)
+        raw_output = (
+            "Session initialized\n"
+            "Warning: some non-fatal banner\n"
+            '{"type": "result", "result": "function test() { if (true) { return { a: 1, b: { c: 2 } }; } }"}\n'
+            "Session closed."
+        )
+        extracted = client._extract_result(raw_output)
+        self.assertEqual(extracted, "function test() { if (true) { return { a: 1, b: { c: 2 } }; } }")
+
 
 if __name__ == "__main__":
     unittest.main()
+

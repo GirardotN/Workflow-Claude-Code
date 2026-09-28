@@ -102,16 +102,20 @@ class TestRunner:
 
         start_time = time.perf_counter()
         try:
-            use_shell = os.name == "nt"
+            exec_cmd = cmd
+            if os.name == "nt" and cmd and cmd[0].lower().endswith((".cmd", ".bat")):
+                comspec = os.environ.get("COMSPEC", "cmd.exe")
+                exec_cmd = [comspec, "/d", "/c"] + cmd
+
             proc = subprocess.run(
-                cmd,
+                exec_cmd,
                 cwd=str(project_dir),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
                 timeout=self.timeout_seconds,
-                shell=use_shell,
+                shell=False,
             )
             duration = time.perf_counter() - start_time
             passed = (proc.returncode == 0)
