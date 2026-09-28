@@ -6,6 +6,25 @@ import os
 import shutil
 from pathlib import Path
 
+# Chargement automatique des variables d'environnement (.env)
+_env_path = Path(__file__).resolve().parent / ".env"
+if _env_path.is_file():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_path)
+    except ImportError:
+        try:
+            with open(_env_path, encoding="utf-8") as _f:
+                for _line in _f:
+                    _line = _line.strip()
+                    if _line and not _line.startswith("#") and "=" in _line:
+                        _k, _v = _line.split("=", 1)
+                        _k, _v = _k.strip(), _v.strip().strip("'\"")
+                        if _k and _k not in os.environ:
+                            os.environ[_k] = _v
+        except Exception:
+            pass
+
 
 def _find_claude_binary() -> str:
     """Détecte l'emplacement du binaire Claude Code CLI."""
