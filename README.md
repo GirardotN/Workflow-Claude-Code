@@ -1,4 +1,4 @@
-# 🤖 Workflow-Claude-Code : Orchestrateur Multi-Agents Claude & TypeSafe Jev
+# Workflow-Claude-Code : Orchestrateur Multi-Agents Claude & TypeSafe Jev
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-0078D4?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/GirardotN/Workflow-Claude-Code)
@@ -16,7 +16,7 @@ Il neutralise définitivement les écueils critiques des agents autonomes conven
 
 ---
 
-### ⚖️ Tableau Comparatif Synthétique
+### Tableau Comparatif Synthétique
 
 | Dimension Critique | Développement Manuel | Scripts d'Agents Naïfs (LLM Wrapper) | **Workflow-Claude-Code** |
 | :--- | :--- | :--- | :--- |
@@ -31,7 +31,7 @@ Il neutralise définitivement les écueils critiques des agents autonomes conven
 
 ---
 
-## ⚡ Démarrage Rapide (Quickstart en 3 Minutes)
+## Démarrage Rapide (Quickstart en 3 Minutes)
 
 ### 1. Prérequis Système
 - **Node.js (v18+)** : Requis pour faire tourner le CLI officiel Claude Code.
@@ -80,7 +80,7 @@ workflow --mock "Test de flux"
 
 ---
 
-## 🔄 Flux FSM en Bref
+## Flux FSM en Bref
 
 L'orchestrateur évalue le niveau de complexité de la demande après spécification in-situ et applique une séparation stricte des rôles :
 
@@ -95,21 +95,21 @@ flowchart TD
 
 ---
 
-## 📚 Documentation Technique Complète
+## Documentation Technique Complète
 
 Pour explorer tous les détails architecturaux, les guides avancés et la référence d'ingénierie, consultez la documentation modulaire :
 
 | Document | Description |
 | :--- | :--- |
-| 🏛️ **[Architecture & Modèle Mental](docs/architecture.md)** | Diagrammes Mermaid détaillés (FSM complète, séquence Stash Guard), matrice d'allocation des modèles et isolation cognitive. |
-| 🍳 **[Guide d'Utilisation Avancé (Cookbooks)](docs/cookbooks.md)** | Cas réels : Refactoring in-situ React/TS avec `git add -N`, correction TDD FastAPI avec auto-réparation, et pipelines CI/CD batch. |
-| ⚙️ **[Référence des Paramètres & Configuration](docs/configuration.md)** | Tableau exhaustif des arguments CLI, variables d'environnement `.env`, configuration JSON et priorité de résolution. |
-| 🔬 **[Sous le Capot : Ingénierie & Sécurité](docs/under-the-hood.md)** | Analyse technique approfondie : Stash Guard inconditionnel, Oracle Baseline Cycle 0 avec normalisation anti-jitter, sécurisation sous Windows et parseur lexical. |
-| 🛠️ **[Dépannage, FAQ & Diagnostics](docs/troubleshooting.md)** | Diagnostic des erreurs courantes (binaire introuvable, session expirée, conflits de stash, Circuit Breaker). |
+| **[Architecture & Modèle Mental](docs/architecture.md)** | Diagrammes Mermaid détaillés (FSM complète, séquence Stash Guard), matrice d'allocation des modèles et isolation cognitive. |
+| **[Guide d'Utilisation Avancé (Cookbooks)](docs/cookbooks.md)** | Cas réels : Refactoring in-situ React/TS avec `git add -N`, correction TDD FastAPI avec auto-réparation, et pipelines CI/CD batch. |
+| **[Référence des Paramètres & Configuration](docs/configuration.md)** | Tableau exhaustif des arguments CLI, variables d'environnement `.env`, configuration JSON et priorité de résolution. |
+| **[Sous le Capot : Ingénierie & Sécurité](docs/under-the-hood.md)** | Analyse technique approfondie : Stash Guard inconditionnel, Oracle Baseline Cycle 0 avec normalisation anti-jitter, sécurisation sous Windows et parseur lexical. |
+| **[Dépannage, FAQ & Diagnostics](docs/troubleshooting.md)** | Diagnostic des erreurs courantes (binaire introuvable, session expirée, conflits de stash, Circuit Breaker). |
 
 ---
 
-## 🧪 Tests Unitaires & Intégration Continue (CI/CD)
+## Tests Unitaires & Intégration Continue (CI/CD)
 
 Le projet intègre une suite de **27 tests unitaires hermétiques** (100 % de succès) validant chaque composant sans dépendance externe :
 ```bash
@@ -123,7 +123,7 @@ Chaque commit et pull request est testé sur une matrice **9 environnements** :
 
 ---
 
-## 📄 Licence
+## Licence
 
 Ce projet est distribué sous **Licence MIT**. Consultez le fichier [LICENSE](LICENSE) pour plus de détails.  
-Créé et maintenu par **Nicolas Girardot** (`nicolas.girardot@etu.umontpellier.fr`).
+Créé et maintenu par **Nicolas Girardot** (`nicolasgirardot60@gmail.com`).
