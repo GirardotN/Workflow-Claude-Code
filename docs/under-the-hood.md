@@ -1,4 +1,4 @@
-# 🔬 Sous le Capot : Ingénierie & Sécurité Enterprise-Grade
+# Sous le Capot : Ingénierie & Sécurité Enterprise-Grade
 
 Ce document détaille les solutions techniques durcies mises en œuvre dans **`Workflow-Claude-Code`** pour garantir la sécurité du système hôte et l'intégrité absolue des données du développeur.
 
