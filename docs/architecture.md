@@ -1,10 +1,10 @@
-# 🏛️ Architecture & Modèle Mental
+# Architecture & Modèle Mental
 
 Ce document détaille l'architecture interne, le fonctionnement de la Machine à États Finis (FSM) et les choix de conception qui sous-tendent l'orchestrateur **`Workflow-Claude-Code`**.
 
 ---
 
-## 🧠 Modèle Mental à Deux Niveaux (Système 1 / Système 2)
+## Modèle Mental à Deux Niveaux (Système 1 / Système 2)
 
 L'architecture s'inspire de la théorie cognitive des processus duaux :
 
@@ -20,64 +20,64 @@ L'architecture s'inspire de la théorie cognitive des processus duaux :
 
 ---
 
-## 🔄 Machine à États Finis (FSM) : Flux des 3 Branches
+## Machine à États Finis (FSM) : Flux des 3 Branches
 
 L'orchestrateur évalue dynamiquement le niveau de complexité de la tâche après la phase de spécification initiale et aiguille l'exécution vers l'une des trois branches :
 
 ```mermaid
 flowchart TD
-    Start(["🚀 Invite Utilisateur Initiale"]) --> Spec["📝 Étape 1 : Spécification Technique In-Situ<br/><i>Modèle : Claude Sonnet</i>"]
-    Spec --> JevRoute{"⚖️ Étape 2 : Aiguillage Jev<br/><i>Classification Complexité & Spécialité</i>"}
+    Start(["Invite Utilisateur Initiale"]) --> Spec["Étape 1 : Spécification Technique In-Situ<br/><i>Modèle : Claude Sonnet</i>"]
+    Spec --> JevRoute{"Étape 2 : Aiguillage Jev<br/><i>Classification Complexité & Spécialité</i>"}
 
     %% Branche Simple
-    JevRoute -->|"Tâche Simple"| DevSimple["💻 Dev Simple<br/><i>Modèle : Sonnet</i>"]
-    DevSimple --> TestsSimple{"🧪 Oracle Tests Propre ?"}
-    TestsSimple -->|"Échec (Régression)"| FbTestSimple["⚠️ Feedback d'Erreur Tests"]
+    JevRoute -->|"Tâche Simple"| DevSimple["Dev Simple<br/><i>Modèle : Sonnet</i>"]
+    DevSimple --> TestsSimple{"Oracle Tests Propre ?"}
+    TestsSimple -->|"Échec (Régression)"| FbTestSimple["Feedback d'Erreur Tests"]
     FbTestSimple --> DevSimple
-    TestsSimple -->|"Succès"| QualSimple["🔍 Check Bug & Qualité<br/><i>Modèle : Sonnet</i>"]
-    QualSimple --> JevQualSimple{"⚖️ Jev : Qualité Validée ?"}
-    JevQualSimple -->|"Rejet (Rollback Git)"| FbQualSimple["⚠️ Feedback Correctif Qualité<br/><i>Modèle : Haiku</i>"]
+    TestsSimple -->|"Succès"| QualSimple["Check Bug & Qualité<br/><i>Modèle : Sonnet</i>"]
+    QualSimple --> JevQualSimple{"Jev : Qualité Validée ?"}
+    JevQualSimple -->|"Rejet (Rollback Git)"| FbQualSimple["Feedback Correctif Qualité<br/><i>Modèle : Haiku</i>"]
     FbQualSimple --> DevSimple
-    JevQualSimple -->|"Validé"| DocSimple["📦 Doc & Commit Git<br/><i>Modèle : Sonnet</i>"]
+    JevQualSimple -->|"Validé"| DocSimple["Doc & Commit Git<br/><i>Modèle : Sonnet</i>"]
 
     %% Branche Moyenne
-    JevRoute -->|"Tâche Moyenne"| DevMoy["💻 Dev Moyen<br/><i>Modèle : Sonnet</i>"]
-    DevMoy --> TestsMoy{"🧪 Oracle Tests Propre ?"}
-    TestsMoy -->|"Échec (Régression)"| FbTestMoy["⚠️ Feedback d'Erreur Tests"]
+    JevRoute -->|"Tâche Moyenne"| DevMoy["Dev Moyen<br/><i>Modèle : Sonnet</i>"]
+    DevMoy --> TestsMoy{"Oracle Tests Propre ?"}
+    TestsMoy -->|"Échec (Régression)"| FbTestMoy["Feedback d'Erreur Tests"]
     FbTestMoy --> DevMoy
-    TestsMoy -->|"Succès"| QualMoy["🔍 Check Bug & Qualité<br/><i>Modèle : Sonnet</i>"]
-    QualMoy --> JevQualMoy{"⚖️ Jev : Qualité Validée ?"}
-    JevQualMoy -->|"Rejet (Rollback Git)"| FbQualMoy["⚠️ Feedback Correctif Qualité<br/><i>Modèle : Haiku</i>"]
+    TestsMoy -->|"Succès"| QualMoy["Check Bug & Qualité<br/><i>Modèle : Sonnet</i>"]
+    QualMoy --> JevQualMoy{"Jev : Qualité Validée ?"}
+    JevQualMoy -->|"Rejet (Rollback Git)"| FbQualMoy["Feedback Correctif Qualité<br/><i>Modèle : Haiku</i>"]
     FbQualMoy --> DevMoy
-    JevQualMoy -->|"Validé"| SecuMoy["🔒 Check Cyber-Sécurité<br/><i>Modèle : Sonnet</i>"]
-    SecuMoy --> JevSecuMoy{"⚖️ Jev : Sécurité Validée ?"}
-    JevSecuMoy -->|"Rejet (Rollback Git)"| FbSecuMoy["⚠️ Feedback Correctif Sécu<br/><i>Modèle : Haiku</i>"]
+    JevQualMoy -->|"Validé"| SecuMoy["Check Cyber-Sécurité<br/><i>Modèle : Sonnet</i>"]
+    SecuMoy --> JevSecuMoy{"Jev : Sécurité Validée ?"}
+    JevSecuMoy -->|"Rejet (Rollback Git)"| FbSecuMoy["Feedback Correctif Sécu<br/><i>Modèle : Haiku</i>"]
     FbSecuMoy --> DevMoy
-    JevSecuMoy -->|"Validé"| DocMoy["📦 Doc & Commit Git<br/><i>Modèle : Haiku</i>"]
+    JevSecuMoy -->|"Validé"| DocMoy["Doc & Commit Git<br/><i>Modèle : Haiku</i>"]
 
     %% Branche Complexe
-    JevRoute -->|"Tâche Complexe"| DevComp["💻 Dev Complexe<br/><i>Modèle : Opus</i>"]
-    DevComp --> TestsComp{"🧪 Oracle Tests Propre ?"}
-    TestsComp -->|"Échec (Régression)"| FbTestComp["⚠️ Feedback d'Erreur Tests"]
+    JevRoute -->|"Tâche Complexe"| DevComp["Dev Complexe<br/><i>Modèle : Opus</i>"]
+    DevComp --> TestsComp{"Oracle Tests Propre ?"}
+    TestsComp -->|"Échec (Régression)"| FbTestComp["Feedback d'Erreur Tests"]
     FbTestComp --> DevComp
-    TestsComp -->|"Succès"| QualComp["🔍 Check Bug & Qualité<br/><i>Modèle : Opus</i>"]
-    QualComp --> JevQualComp{"⚖️ Jev : Qualité Validée ?"}
-    JevQualComp -->|"Rejet (Rollback Git)"| FbQualComp["⚠️ Feedback Correctif Qualité<br/><i>Modèle : Sonnet</i>"]
+    TestsComp -->|"Succès"| QualComp["Check Bug & Qualité<br/><i>Modèle : Opus</i>"]
+    QualComp --> JevQualComp{"Jev : Qualité Validée ?"}
+    JevQualComp -->|"Rejet (Rollback Git)"| FbQualComp["Feedback Correctif Qualité<br/><i>Modèle : Sonnet</i>"]
     FbQualComp --> DevComp
-    JevQualComp -->|"Validé"| SecuComp["🔒 Check Cyber-Sécurité<br/><i>Modèle : Sonnet</i>"]
-    SecuComp --> JevSecuComp{"⚖️ Jev : Sécurité Validée ?"}
-    JevSecuComp -->|"Rejet (Rollback Git)"| FbSecuComp["⚠️ Feedback Correctif Sécu<br/><i>Modèle : Sonnet</i>"]
+    JevQualComp -->|"Validé"| SecuComp["Check Cyber-Sécurité<br/><i>Modèle : Sonnet</i>"]
+    SecuComp --> JevSecuComp{"Jev : Sécurité Validée ?"}
+    JevSecuComp -->|"Rejet (Rollback Git)"| FbSecuComp["Feedback Correctif Sécu<br/><i>Modèle : Sonnet</i>"]
     FbSecuComp --> DevComp
-    JevSecuComp -->|"Validé"| DocComp["📦 Doc & Commit Git<br/><i>Modèle : Haiku</i>"]
+    JevSecuComp -->|"Validé"| DocComp["Doc & Commit Git<br/><i>Modèle : Haiku</i>"]
 
-    DocSimple --> OutputSuccess(["✅ Succès : Commit, Merge & Artefacts ./output"])
+    DocSimple --> OutputSuccess(["Succès : Commit, Merge & Artefacts ./output"])
     DocMoy --> OutputSuccess
     DocComp --> OutputSuccess
 ```
 
 ---
 
-## 🛡️ Isolation Transactionnelle Git & Stash Guard
+## Isolation Transactionnelle Git & Stash Guard
 
 Pour éliminer tout risque de collision avec les modifications locales de l'utilisateur ou de corruption de branche :
 
@@ -142,7 +142,7 @@ sequenceDiagram
 
 ---
 
-## 📊 Matrice d'Allocation des Modèles
+## Matrice d'Allocation des Modèles
 
 L'orchestrateur adapte la puissance du modèle à l'effort cognitif de chaque phase :
 
@@ -162,7 +162,7 @@ L'orchestrateur adapte la puissance du modèle à l'effort cognitif de chaque ph
 
 ---
 
-## 🔒 Isolation Cognitive Stricte
+## Isolation Cognitive Stricte
 
 Pour prévenir les biais de confirmation et l'explosion de la fenêtre de contexte :
 - **L'Agent Qualité** ne reçoit **que** le code brut ou le `git diff`. Il n'a aucun accès au prompt de spécification initial ni à l'identité du développeur, ce qui garantit une relecture neutre et impartiale.
