@@ -1,10 +1,10 @@
-# ⚙️ Guide de Référence des Paramètres & Configuration
+# Guide de Référence des Paramètres & Configuration
 
 Ce document détaille l'ensemble des arguments en ligne de commande, des variables d'environnement et des fichiers de configuration supportés par **`Workflow-Claude-Code`**.
 
 ---
 
-## 🧭 Priorité de Résolution de la Configuration
+## Priorité de Résolution de la Configuration
 
 L'orchestrateur applique un ordre de précédence strict :
 ```text
@@ -16,7 +16,7 @@ Ligne de Commande (CLI)
 
 ---
 
-## 💻 Options de la Ligne de Commande (`cli.py`)
+## Options de la Ligne de Commande (`cli.py`)
 
 ```text
 usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT_DIR]
@@ -47,7 +47,7 @@ usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT
 
 ---
 
-## 📄 Variables d'Environnement (`.env`)
+## Variables d'Environnement (`.env`)
 
 Copiez le fichier [.env.example](../.env.example) vers `.env` à la racine de votre installation :
 
@@ -68,7 +68,7 @@ Copiez le fichier [.env.example](../.env.example) vers `.env` à la racine de vo
 
 ---
 
-## 👤 Préférences Utilisateur Globales (`config.json`)
+## Préférences Utilisateur Globales (`config.json`)
 
 Pour définir des préférences qui s'appliquent à tous vos dépôts sans dupliquer de fichier `.env`, vous pouvez créer le fichier `~/.config/workflow-claude/config.json` :
 
