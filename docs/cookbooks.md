@@ -1,4 +1,4 @@
-# 🍳 Guide d'Utilisation Avancé (Cookbooks)
+# Guide d'Utilisation Avancé (Cookbooks)
 
 Ce guide rassemble des scénarios d'ingénierie réels et reproductibles montrant comment tirer parti de **`Workflow-Claude-Code`** sur des bases de code complexes.
 
