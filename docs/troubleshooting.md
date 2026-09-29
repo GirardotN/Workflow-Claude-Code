@@ -1,10 +1,10 @@
-# 🛠️ Guide de Dépannage, FAQ & Diagnostics
+# Guide de Dépannage, FAQ & Diagnostics
 
 Ce guide répertorie les situations d'erreur fréquentes, leurs causes exactes et les étapes concrètes de résolution pour **`Workflow-Claude-Code`**.
 
 ---
 
-## 🔍 Diagnostics & Solutions Rapides
+## Diagnostics & Solutions Rapides
 
 ### 1. Binaire `claude` introuvable
 
