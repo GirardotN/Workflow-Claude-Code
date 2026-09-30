@@ -40,6 +40,7 @@ usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT
 | `--merge` | `flag` | `False` | Fusionne automatiquement la branche d'isolation dans la branche source en fin de cycle validé. |
 | `--allow-bash` | `flag` | `False` | Autorise l'outil Bash pour l'agent de développement, **restreint à une liste blanche** (tests, lecture ; git modifiant l'état, `rm`, `curl`, `sudo` interdits — voir [under-the-hood](under-the-hood.md)). |
 | `--allow-api-key` | `flag` | `False` | Laisse passer `ANTHROPIC_API_KEY` & co au CLI Claude (**facturation à l'usage**). Par défaut elles sont retirées pour n'utiliser que l'abonnement. |
+| `--doc-edit` / `--no-doc-edit` | `flag` | `--doc-edit` | Mode In-Repo : agent de documentation du projet (README, CHANGELOG, docs/) dans le même commit ; toute modification hors documentation est annulée. |
 | `--jev-send` | `full` \| `review-only` | `full` | Données envoyées au service tiers TypeSafe pour les validations (voir [SECURITY](../SECURITY.md)). |
 | `--doctor` | `flag` | — | Vérifie l'environnement (git, CLI Claude, options, session, clés) sans consommer de quota, puis quitte (code 1 si point bloquant). |
 | `--run-tests` | `flag` | `True` | Exécute automatiquement la suite de tests du projet hôte comme oracle de validation déterministe. |
@@ -70,6 +71,8 @@ Copiez le fichier [.env.example](../.env.example) vers `.env` dans le **réperto
 | `CLAUDE_TIMEOUT_SPEC_SECONDS` | `int` | `300` | Délai de l'étape d'exploration / spécification. |
 | `CLAUDE_TIMEOUT_DEV_SECONDS` | `int` | `900` | Délai de l'agent de développement. |
 | `CLAUDE_MAX_RETRIES` | `int` | `2` | Reprises sur erreur transitoire de Claude (surcharge serveur, 5xx). Jamais pour un quota ou une session expirée. |
+| `DOC_EDIT` | `0` ou `1` | `1` | Mode In-Repo : un agent met à jour la doc existante du projet (hors code, garde-fou). Équivalent de `--doc-edit` / `--no-doc-edit`. |
+| `MAX_DIFF_CHARS` | `int` | `150000` | Plafond (caractères) du diff/code inséré dans les prompts des agents (troncature au milieu, signalée). |
 | `ALLOW_API_KEY` | `0` ou `1` | `0` | Équivalent de `--allow-api-key`. |
 | `MAX_WORKFLOW_RETRIES` | `int` | `4` | Nombre d'itérations autorisées avant déclenchement du Circuit Breaker. |
 | `ALLOW_BASH` | `0` ou `1` | `0` | Autoriser ou interdire l'outil Bash pour l'agent de dev. |

@@ -5,6 +5,9 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 ## [Non publié]
 
 ### Modifié
+- **Un seul moteur** (`fsm.WorkflowEngine`) pour les modes In-Repo et Standalone : ~500 lignes dupliquées supprimées, `orchestrator.py` ne garde que les services. Comportement et noms d'étapes inchangés.
+- **`--mock` ne modifie plus jamais le code d'un projet** : l'agent de dev simulé n'écrit que `WORKFLOW_MOCK.md`. La simulation est indexée par rôle (l'ancienne, par sous-chaîne du prompt, ré-appliquait l'édition lors de la revue d'un diff contenant « in-situ »).
+- Replis silencieux du routage (`from_str`) désormais journalisés ; champ mort `target_files` supprimé.
 - **Fin de run In-Repo** : le succès est toujours committé sur la branche `workflow/ai-*` ; l'orchestrateur ramène ensuite l'utilisateur sur sa branche d'origine (fusion automatique avec `--merge`, sinon décision via callback/invite), puis restaure le stash **sur la branche d'origine** (avant, il l'était sur la branche de travail). `--commit` n'a d'effet qu'avec `--no-branch`.
 - `GitClient` : toutes les commandes s'exécutent à la racine du dépôt ; `rollback` = `reset --hard` + `clean -fd` (lève une erreur au lieu de l'ignorer) ; `commit` lève `GitClientError` (hook, identité…) et passe le message sur stdin ; stash retrouvé par message (plus « le dernier ») ; `get_modified_files` fiable (`-z`, fichiers d'un dossier non suivi listés).
 - Les fichiers non suivis créés par l'exécution des tests sont supprimés avant le diff/commit.
@@ -31,6 +34,9 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - `TestRunner.run_tests` : `custom_cmd` accepte une liste d'arguments ; découpage non-POSIX sous Windows.
 
 ### Ajouté
+- **Agent doc (`DOC_EDIT`, mode In-Repo)** : met à jour la documentation existante du projet (README, CHANGELOG, `*.md`/`*.rst`/`*.adoc`, `docs/`) dans le même commit que le code. `doc_guard.py` annule ensuite toute modification hors documentation (code, config, tests, suppressions) et protège le code validé ; une panne de l'agent ne remet jamais en cause le code validé. `--no-doc-edit` / `DOC_EDIT=0` pour le couper ; `DOC_CHANGES.diff` séparé du patch de code.
+- `policy.py` (`ModelPolicy`, matrice des modèles, testée contre le tableau de `docs/architecture.md`), `prompts.py` (tous les gabarits + consignes par spécialité via `--append-system-prompt`), `fsm.py` (moteur unique + backends), `clients/mocks.py`, `text_utils.py`.
+- Contrôle de contexte : diff relu sans lockfiles/fichiers générés (`package-lock.json`, `dist/`, `*.min.js`…, avec mention des fichiers exclus), plafond `MAX_DIFF_CHARS` (150 000) dans les prompts, coût/tours/session de chaque appel Claude dans les métadonnées des étapes (`report.cost_usd`).
 - `jev_context.py` : masquage des secrets et plafonnement du texte envoyé à Jev ; `--jev-send {full,review-only}` / `JEV_SEND`.
 - Trace des décisions Jev dans le rapport (`report.decisions`, `report.jev_mode`) et dans le résumé du CLI ; contrôle de cohérence avec le `VERDICT: PASS|FAIL` des relecteurs.
 - Descriptions des niveaux de complexité et des spécialités transmises à Jev pour le routage.
