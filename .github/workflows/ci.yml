@@ -7,7 +7,7 @@ on:
       - "docs/**"
       - "**/*.md"
   pull_request:
-    branches: [ "main" ]
+    # pas de filtre de branche : les PR empilées (base ≠ main) sont aussi testées
     paths-ignore:
       - "docs/**"
       - "**/*.md"

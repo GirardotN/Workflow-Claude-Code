@@ -6,6 +6,8 @@ Ce guide répertorie les situations d'erreur fréquentes, leurs causes exactes e
 
 ## Diagnostics & Solutions Rapides
 
+> **Première étape pour tout problème d'environnement : `workflow --doctor`.** Il vérifie Git (et l'identité), le CLI Claude (version, options requises), la session (`claude auth status`), la présence de clés API payantes et de la clé TypeSafe, sans consommer de quota.
+
 ### 1. Binaire `claude` introuvable
 
 #### Symptôme
@@ -53,6 +55,27 @@ Le CLI Claude Code requiert une session interactive active pour utiliser votre a
 claude auth login
 ```
 Suivez les instructions dans votre navigateur web. Une fois connecté, relancez `workflow`.
+
+---
+
+### 2 bis. Limite d'usage de l'abonnement atteinte
+
+#### Symptôme
+```text
+ClaudeQuotaError: Limite d'usage de l'abonnement Claude atteinte : You've hit your limit · resets 5pm ...
+```
+
+#### Ce qui s'est passé
+Le CLI a signalé `is_error` avec un message de quota. Le workflow s'arrête **immédiatement** (pas de reprise inutile) ; le rollback, le retour sur votre branche et la restauration de votre stash sont faits automatiquement.
+
+#### Solution
+Relancez après l'heure de réinitialisation indiquée dans le message. Pour limiter la consommation : tâches plus petites, `--max-retries` plus bas.
+
+---
+
+### 2 ter. Timeout de l'agent
+
+Symptôme : `ClaudeTimeoutError: Timeout (900s) dépassé ...`. Augmentez `CLAUDE_TIMEOUT_DEV_SECONDS` (développement), `CLAUDE_TIMEOUT_SPEC_SECONDS` (exploration) ou `CLAUDE_TIMEOUT_SECONDS` (revues). Les timeouts ne sont pas repris automatiquement.
 
 ---
 

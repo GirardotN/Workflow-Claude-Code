@@ -23,7 +23,7 @@ Ligne de Commande (CLI)
 ```text
 usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT_DIR]
                 [--standalone] [--commit] [--branch] [--no-branch] [--merge]
-                [--allow-bash] [--run-tests] [--no-tests] [-y] [--workspace WORKSPACE] [-v]
+                [--allow-bash] [--allow-api-key] [--doctor] [--run-tests] [--no-tests] [-y] [--workspace WORKSPACE] [-v]
                 [prompt]
 ```
 
@@ -38,7 +38,9 @@ usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT
 | `--branch` | `flag` | `True` | Isole le travail sur une branche dédiée `workflow/ai-<timestamp>` pour préserver la branche active. |
 | `--no-branch` | `flag` | — | Désactive la création de branche d'isolation et applique les changements directement sur la branche active. |
 | `--merge` | `flag` | `False` | Fusionne automatiquement la branche d'isolation dans la branche source en fin de cycle validé. |
-| `--allow-bash` | `flag` | `False` | Autorise l'agent Claude à exécuter l'outil Bash *(désactivé par défaut pour des raisons de sécurité)*. |
+| `--allow-bash` | `flag` | `False` | Autorise l'outil Bash pour l'agent de développement, **restreint à une liste blanche** (tests, lecture ; git modifiant l'état, `rm`, `curl`, `sudo` interdits — voir [under-the-hood](under-the-hood.md)). |
+| `--allow-api-key` | `flag` | `False` | Laisse passer `ANTHROPIC_API_KEY` & co au CLI Claude (**facturation à l'usage**). Par défaut elles sont retirées pour n'utiliser que l'abonnement. |
+| `--doctor` | `flag` | — | Vérifie l'environnement (git, CLI Claude, options, session, clés) sans consommer de quota, puis quitte (code 1 si point bloquant). |
 | `--run-tests` | `flag` | `True` | Exécute automatiquement la suite de tests du projet hôte comme oracle de validation déterministe. |
 | `--no-tests` | `flag` | — | Désactive l'exécution des tests du projet hôte. |
 | `-y`, `--yes` | `flag` | `False` | Valide automatiquement les confirmations interactives (fusion de branche, retour sur branche source). |
@@ -60,7 +62,11 @@ Copiez le fichier [.env.example](../.env.example) vers `.env` dans le **réperto
 | `TYPESAFE_FALLBACK_URL` | `url` | `https://api.typesafe.ai/v1/decide` | Endpoint de secours pour l'API TypeSafe Decide directe. |
 | `TYPESAFE_TIMEOUT_SECONDS`| `float` | `30.0` | Délai d'attente maximum pour les requêtes HTTP vers l'API TypeSafe. |
 | `CLAUDE_BIN` | `path` | Auto-détecté | Chemin absolu personnalisé vers le binaire `claude` (utile si non présent dans le `PATH`). |
-| `CLAUDE_TIMEOUT_SECONDS` | `int` | `180` | Délai d'expiration maximum par sous-processus Claude Code CLI. |
+| `CLAUDE_TIMEOUT_SECONDS` | `int` | `180` | Délai par défaut (revues, feedback, doc & commit). |
+| `CLAUDE_TIMEOUT_SPEC_SECONDS` | `int` | `300` | Délai de l'étape d'exploration / spécification. |
+| `CLAUDE_TIMEOUT_DEV_SECONDS` | `int` | `900` | Délai de l'agent de développement. |
+| `CLAUDE_MAX_RETRIES` | `int` | `2` | Reprises sur erreur transitoire de Claude (surcharge serveur, 5xx). Jamais pour un quota ou une session expirée. |
+| `ALLOW_API_KEY` | `0` ou `1` | `0` | Équivalent de `--allow-api-key`. |
 | `MAX_WORKFLOW_RETRIES` | `int` | `4` | Nombre d'itérations autorisées avant déclenchement du Circuit Breaker. |
 | `ALLOW_BASH` | `0` ou `1` | `0` | Autoriser ou interdire l'outil Bash pour l'agent de dev. |
 | `USE_BRANCH` | `0` ou `1` | `1` | Isoler le travail sur une branche dédiée `workflow/ai-*`. |

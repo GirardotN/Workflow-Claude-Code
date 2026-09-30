@@ -14,6 +14,10 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - Spécification d'origine déplacée vers `docs/adr/0000-spec-origine.md`.
 
 ### Corrigé
+- **Client Claude** : le prompt est envoyé sur **stdin** en octets exacts (plus de limite de ligne de commande Windows, plus d'injection via `cmd`, plus de LF → CRLF sous Windows). Sous Windows, le binaire natif `claude.exe` est appelé directement (sans `cmd.exe`).
+- **« Zéro crédit API » enfin garanti** : `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, Bedrock/Vertex/Foundry sont retirées de l'environnement du sous-processus (sauf `--allow-api-key`).
+- **Les erreurs Claude ne sont plus prises pour des résultats** : `is_error` du JSON est lu avant le code de sortie ; erreurs typées `ClaudeAuthError`, `ClaudeQuotaError`, `ClaudeTimeoutError`.
+- **Isolation cognitive réelle** : les relecteurs (qualité, sécurité, feedback, doc) n'ont aucun outil et tournent dans un répertoire temporaire vide ; tout le mode Standalone aussi.
 - **Circuit breaker décalé d'un cycle** : le dernier cycle autorisé n'était jamais revu (avec `--max-retries 1`, aucun succès possible). Il n'est plus évalué qu'à l'entrée d'un nouveau cycle DEV.
 - **Stash restauré sur la mauvaise branche** et **aucun nettoyage sur exception/Ctrl-C/timeout** : `IsolatedRun` garantit rollback, retour sur la branche d'origine et `stash pop` sur toute sortie.
 - Sujet de commit détecté par regex conventionnelle (plus de faux positifs type « feature request »), balises ``` jamais conservées.
@@ -23,6 +27,10 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - `TestRunner.run_tests` : `custom_cmd` accepte une liste d'arguments ; découpage non-POSIX sous Windows.
 
 ### Ajouté
+- `workflow --doctor` : diagnostic de l'environnement sans consommer de quota.
+- `--allow-api-key` / `ALLOW_API_KEY`, délais par rôle (`CLAUDE_TIMEOUT_DEV_SECONDS` 900 s, `CLAUDE_TIMEOUT_SPEC_SECONDS` 300 s), reprises sur erreur transitoire (`CLAUDE_MAX_RETRIES`).
+- `roles.py` (`Role`), `tool_policy.py` (outils par rôle, liste blanche/noire Bash pour `--allow-bash`), `doctor.py`.
+- Tests : faux binaire `claude` (`tests/fake_claude.py`) pour tester le client de bout en bout sur les 3 OS.
 - CI : job `lint` (ruff), test de fumée d'installation non éditable, `concurrency`, permissions en lecture seule.
 - `.gitattributes`, `.editorconfig`, `.pre-commit-config.yaml`, `CONTRIBUTING.md`, `SECURITY.md`.
 

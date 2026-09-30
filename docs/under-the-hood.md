@@ -55,26 +55,40 @@ Si le développeur avait des modifications en cours non enregistrées sur son ar
 
 ---
 
-## 3. Sécurité des Sous-Processus & Résilience Windows
+## 3. Appels à Claude : prompt sur stdin, environnement nettoyé, outils par rôle
 
-### Le Problème
-Sous Windows, le binaire Claude Code est généralement installé globalement par npm sous la forme d'un script batch `claude.cmd`. L'appel direct via `subprocess.run(["claude.cmd", ...])` échoue sous Windows sans shell. Cependant, activer `shell=True` introduit une vulnérabilité critique d'injection shell si le prompt utilisateur contient des métacaractères (`&`, `|`, `%`, `^`).
+### Le prompt ne passe jamais par la ligne de commande
+Le texte envoyé à `claude -p` (spécification, diff, revue…) est transmis sur **l'entrée standard**, en octets exacts (UTF-8, sans conversion de fins de ligne). Conséquences :
+- aucune limite de longueur de ligne de commande (Windows : ~8 ko via `cmd /c`, ~32 ko sinon) ;
+- aucun contenu utilisateur n'est jamais interprété par un shell (`& | % ^ "`, `$(...)`…) : un test envoie un prompt de 240 000 caractères bourré de métacaractères et vérifie qu'il arrive intact.
 
-### L'Implémentation Sécurisée
-1. **Bannissement de `shell=True` :**  
-   Le paramètre `shell=False` est rigoureusement maintenu sur toutes les plateformes.
-2. **Invocation Sécurisée via `comspec` :**  
-   Sous Windows, la commande est enveloppée de manière contrôlée :
-   ```python
-   if os.name == "nt" and self.binary_path.lower().endswith((".cmd", ".bat")):
-       comspec = os.environ.get("COMSPEC", "cmd.exe")
-       exec_cmd = [comspec, "/d", "/c", self.binary_path] + cmd[1:]
-   ```
-   Le commutateur `/d` désactive l'exécution des commandes d'AutoRun inscrites dans le Registre Windows.
-3. **Normalisation Linguistique Git (`LC_ALL=C`) :**  
-   Toutes les commandes Git injectent la variable d'environnement `LC_ALL=C` pour garantir des sorties prévisibles et homogènes (évite les divergences linguistiques des messages d'erreur selon la locale de l'OS).
-4. **Encodage UTF-8 Universel :**  
-   Gestion explicite de `encoding="utf-8"` et `errors="replace"` avec reconfiguration de `sys.stdout` pour Windows Terminal / PowerShell, éliminant les erreurs `UnicodeDecodeError` fréquentes avec la page de code CP1252.
+Sous Windows, le shim npm `claude.cmd` ne fait que lancer `node_modules/@anthropic-ai/claude-code/bin/claude.exe` : l'orchestrateur appelle **directement ce binaire natif** (pas de `cmd.exe`). Si le binaire natif est introuvable, il retombe sur `cmd /d /c claude.cmd`, en refusant tout argument contenant un caractère que `cmd` interpréterait. `shell=True` n'est jamais utilisé.
+
+### « Zéro crédit API » : environnement du sous-processus
+Par défaut, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX` et `CLAUDE_CODE_USE_FOUNDRY` sont **retirées de l'environnement du processus Claude** : le CLI n'a d'autre choix que la session de l'abonnement (`claude auth login`). Le CLI affiche un message si l'une d'elles est présente dans votre environnement. `--allow-api-key` (ou `ALLOW_API_KEY=1`) lève cette protection, à vos risques (facturation à l'usage, avertissement affiché). `workflow --doctor` vérifie tout cela sans consommer de quota.
+
+### Isolation cognitive : ce que chaque agent peut voir et faire
+| Rôle | Outils Claude | Répertoire de travail |
+| :--- | :--- | :--- |
+| Spécification (mode In-Repo) | `Read, Grep, Glob` (lecture seule) | le projet |
+| Développement | `Read, Edit, Write, Grep, Glob` (+ `Bash` restreint avec `--allow-bash`) | le projet |
+| Qualité, Sécurité, Feedback, Doc & Commit | **aucun** (`--tools=`) | **répertoire temporaire vide** |
+| Tous les rôles en mode Standalone | **aucun** | répertoire temporaire vide |
+
+Les relecteurs ne peuvent donc pas lire votre dépôt : ils ne voient que le texte qu'on leur envoie (le diff, la revue qualité pour l'agent sécurité). Ce n'est plus une simple consigne de prompt.
+
+### Politique `--allow-bash` (pas un bac à sable)
+Avec `--allow-bash`, l'agent de développement peut lancer uniquement une liste blanche de commandes (`pytest`, `python -m unittest`, `npm test`, `cargo test`, `go test`, `dotnet test`, `git status/diff/log/show`, `ls`, `cat`). Sont **interdits** : toutes les commandes git qui déplacent HEAD ou l'index (`push`, `commit`, `checkout`, `reset`, `clean`, `stash`, `branch`, `merge`, `rebase`, `restore`, `add`), `rm`, `sudo`, `curl`, `wget`, `npm publish/install`, `pip install` — l'état Git appartient à l'orchestrateur. Attention : `pytest` exécute le code de votre projet ; ce n'est pas une isolation système.
+
+### Erreurs, quotas et délais
+- Le CLI renvoie un JSON avec `is_error: true` (même avec le code de sortie 0 ou 1) : il est lu **avant** le code de sortie. Une erreur n'est plus jamais traitée comme un résultat valide.
+- Erreurs typées : `ClaudeAuthError` (session), `ClaudeQuotaError` (limite d'usage de l'abonnement : arrêt propre, aucune reprise), `ClaudeTimeoutError`, `ClaudeCliError` (autres). Les erreurs transitoires (serveur surchargé, 502/503/529) sont reprises `CLAUDE_MAX_RETRIES` fois (défaut 2).
+- Délais par rôle : développement 900 s, spécification 300 s, autres 180 s (`CLAUDE_TIMEOUT_DEV_SECONDS`, `CLAUDE_TIMEOUT_SPEC_SECONDS`, `CLAUDE_TIMEOUT_SECONDS`).
+- Le coût, la durée, le nombre de tours et les refus de permission renvoyés par le CLI sont exposés dans `ClaudeCliClient.last_result`.
+
+### Autres garanties
+- **Git :** `LC_ALL=C` et `GIT_TERMINAL_PROMPT=0` sur toutes les commandes ; sorties prévisibles quelle que soit la langue de l'OS.
+- **Encodage :** `encoding="utf-8"` explicite ; `sys.stdout` reconfiguré sous Windows et affichage tolérant aux erreurs d'encodage.
 
 ---
 
