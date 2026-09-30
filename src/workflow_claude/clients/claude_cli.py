@@ -197,16 +197,23 @@ class ClaudeCliClient:
             target_file = "src/components/TabX.tsx"
             if cwd:
                 cwd_path = Path(cwd)
-                all_files = [
+                # sorted() : l'ordre de rglob dépend du système de fichiers (macOS != Linux/Windows)
+                all_files = sorted(
                     p for p in cwd_path.rglob("*")
                     if p.is_file() and not p.name.startswith(".") and ".git" not in p.parts
-                ]
+                )
                 matched = None
+                # 1) correspondance exacte d'abord, 2) heuristique plus large ensuite
                 for f in all_files:
                     f_name = f.name.lower()
-                    if "tabx" in f_name or "tab_x" in f_name or ("tab" in f_name and "x" in prompt_lower):
+                    if "tabx" in f_name or "tab_x" in f_name:
                         matched = f
                         break
+                if not matched:
+                    for f in all_files:
+                        if "tab" in f.name.lower() and "x" in prompt_lower:
+                            matched = f
+                            break
                 if not matched:
                     code_files = [f for f in all_files if f.suffix in (".tsx", ".ts", ".py", ".js", ".cs")]
                     if code_files:
@@ -229,10 +236,11 @@ class ClaudeCliClient:
         if "applique directement les modifications" in prompt_lower or "in-situ" in prompt_lower:
             if cwd:
                 cwd_path = Path(cwd)
-                all_files = [
+                # sorted() : l'ordre de rglob dépend du système de fichiers (macOS != Linux/Windows)
+                all_files = sorted(
                     p for p in cwd_path.rglob("*")
                     if p.is_file() and not p.name.startswith(".") and ".git" not in p.parts
-                ]
+                )
                 target = None
                 for f in all_files:
                     rel_name = f.relative_to(cwd_path).as_posix()
