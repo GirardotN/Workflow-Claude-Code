@@ -241,7 +241,8 @@ def main(argv=None) -> int:
             print(f"ℹ️ {', '.join(billing_vars)} détecté(s) dans l'environnement : retiré(s) du sous-processus Claude "
                   "(abonnement uniquement). --allow-api-key pour les conserver.\n")
 
-    claude_client = ClaudeCliClient(mock_mode=args.mock, allow_api_key=args.allow_api_key)
+    # --mock : l'agent de développement simulé n'écrit qu'un fichier marqueur, jamais dans le code du projet
+    claude_client = ClaudeCliClient(mock_mode=args.mock, allow_api_key=args.allow_api_key, mock_edit_files=False)
 
     orchestrator = MultiAgentOrchestrator(
         claude_client=claude_client,

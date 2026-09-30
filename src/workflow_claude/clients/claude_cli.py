@@ -30,6 +30,7 @@ from ..config import (
     MOCK_SERVICES,
 )
 from ..roles import Role
+from .mocks import MockClaude
 
 logger = logging.getLogger("claude_cli")
 
@@ -138,6 +139,7 @@ class ClaudeCliClient:
         allow_api_key: bool = ALLOW_API_KEY,
         max_retries: int = CLAUDE_MAX_RETRIES,
         role_timeouts: Optional[Dict[Role, int]] = None,
+        mock_edit_files: bool = True,
     ):
         self.binary_path = binary_path
         self.timeout_seconds = timeout_seconds
@@ -149,6 +151,8 @@ class ClaudeCliClient:
             Role.DEV: CLAUDE_TIMEOUT_DEV_SECONDS,
         }
         self.last_result: Optional[ClaudeResult] = None
+        # Simulation : voir clients/mocks.py (mock_edit_files=False => aucun fichier du projet n'est modifié)
+        self._mock = MockClaude(edit_files=mock_edit_files)
 
     def timeout_for(self, role: Optional[Role]) -> int:
         """Délai d'expiration applicable à un rôle (le délai par défaut sinon)."""
@@ -208,7 +212,8 @@ class ClaudeCliClient:
         Lève ClaudeAuthError / ClaudeQuotaError / ClaudeTimeoutError / ClaudeCliError.
         """
         if self.mock_mode:
-            return self._mock_response(prompt, model, cwd=cwd)
+            self.last_result = None
+            return self._mock.respond(prompt, model, role=role, cwd=cwd, tools=tools, permission_mode=permission_mode)
 
         cmd = self.build_command(
             model,
@@ -461,151 +466,3 @@ class ClaudeCliClient:
     def binary_found(binary_path: str) -> bool:
         """Vrai si le binaire est un fichier existant ou se trouve dans le PATH."""
         return Path(binary_path).is_file() or shutil.which(binary_path) is not None
-
-    def _mock_response(self, prompt: str, model: str, cwd: Optional[str] = None) -> str:
-        """Génère une réponse synthétique cohérente pour tests et simulation."""
-        prompt_lower = prompt.lower()
-
-        # Phase In-Repo : Exploration & Localisation
-        if "explore le codebase" in prompt_lower:
-            target_file = "src/components/TabX.tsx"
-            if cwd:
-                cwd_path = Path(cwd)
-                # sorted() : l'ordre de rglob dépend du système de fichiers (macOS != Linux/Windows)
-                all_files = sorted(
-                    p for p in cwd_path.rglob("*")
-                    if p.is_file() and not p.name.startswith(".") and ".git" not in p.parts
-                )
-                matched = None
-                # 1) correspondance exacte d'abord, 2) heuristique plus large ensuite
-                for f in all_files:
-                    f_name = f.name.lower()
-                    if "tabx" in f_name or "tab_x" in f_name:
-                        matched = f
-                        break
-                if not matched:
-                    for f in all_files:
-                        if "tab" in f.name.lower() and "x" in prompt_lower:
-                            matched = f
-                            break
-                if not matched:
-                    code_files = [f for f in all_files if f.suffix in (".tsx", ".ts", ".py", ".js", ".cs")]
-                    if code_files:
-                        matched = code_files[0]
-                if not matched and all_files:
-                    matched = all_files[0]
-
-                if matched:
-                    target_file = matched.relative_to(cwd_path).as_posix()
-
-            return (
-                f"# Spécification & Localisation In-Situ\n\n"
-                f"## Fichiers Cibles Identifiés\n- `{target_file}`\n\n"
-                f"## Analyse du Code Existant\nComposant localisé avec fonction de traitement/tri ciblée.\n\n"
-                f"## Plan de Modification\n1. Modifier la fonction ciblée dans `{target_file}`.\n"
-                f"2. Assurer la conformité du contrat d'interface et l'absence de régression."
-            )
-
-        # Phase In-Repo : Développement In-Situ
-        if "applique directement les modifications" in prompt_lower or "in-situ" in prompt_lower:
-            if cwd:
-                cwd_path = Path(cwd)
-                # sorted() : l'ordre de rglob dépend du système de fichiers (macOS != Linux/Windows)
-                all_files = sorted(
-                    p for p in cwd_path.rglob("*")
-                    if p.is_file() and not p.name.startswith(".") and ".git" not in p.parts
-                )
-                target = None
-                for f in all_files:
-                    rel_name = f.relative_to(cwd_path).as_posix()
-                    if rel_name in prompt or f.name in prompt:
-                        target = f
-                        break
-                    if "tabx" in f.name.lower() or "tab_x" in f.name.lower():
-                        target = f
-                        break
-
-                if not target:
-                    code_files = [f for f in all_files if f.suffix in (".tsx", ".ts", ".py", ".js", ".cs")]
-                    if code_files:
-                        target = code_files[0]
-                if not target and all_files:
-                    target = all_files[0]
-
-                if target:
-                    content = target.read_text(encoding="utf-8", errors="replace")
-                    if "sort" in content:
-                        new_content = content.replace(".sort(", ".sort((a, b) => b.date - a.date) /* in-situ edit */\n// ")
-                        if new_content == content:
-                            new_content = content.replace("sort(", "sort((a, b) => b.date - a.date) /* in-situ edit */\n// ")
-                    else:
-                        new_content = content + "\n\n// Modification in-situ appliquée avec succès (date décroissante)\nexport const sortItems = (items) => [...items].sort((a, b) => b.date - a.date);\n"
-                    target.write_text(new_content, encoding="utf-8")
-                    return f"Modifications in-situ appliquées avec succès dans : {target.relative_to(cwd_path)}"
-
-            return "Modifications in-situ appliquées avec succès dans le projet."
-
-        if "lead software architect" in prompt_lower or "spécification technique d'implémentation" in prompt_lower:
-            return (
-                "# Spécification Technique Détaillée\n\n"
-                "## Objectifs\nImplémenter le service demandé avec une architecture modulaire et typée.\n\n"
-                "## Composants Requis\n- Contrôleur principal\n- Validateur de schéma\n- Gestionnaire d'erreurs\n\n"
-                "## Contraintes\n- Respect des standards de sécurité\n- Couverture de tests unitaires"
-            )
-
-        if "tu es un expert" in prompt_lower or "implémente la solution" in prompt_lower or "corrige et améliore" in prompt_lower:
-            # Phase Dev
-            return (
-                "```python\n"
-                "# Module généré automatiquement par l'agent de développement\n"
-                "from typing import Any, Dict\n\n"
-                "def process_task(data: Dict[str, Any]) -> Dict[str, Any]:\n"
-                "    \"\"\"Traite une tâche avec validation de contrat.\"\"\"\n"
-                "    if not isinstance(data, dict):\n"
-                "        raise ValueError('Données invalides : dictionnaire attendu')\n"
-                "    return {'status': 'success', 'processed': True, 'payload': data}\n"
-                "```"
-            )
-
-        if "senior code reviewer" in prompt_lower or "qualité, robustesse" in prompt_lower:
-            # Phase Check Qualité
-            return (
-                "ANALYSE QUALITÉ :\n"
-                "- Structure du code claire et typée.\n"
-                "- Validation des arguments présente.\n"
-                "- Aucun bug critique détecté.\n"
-                "- Conforme aux exigences."
-            )
-
-        if "cyber-sécurité" in prompt_lower or "audit de sécurité" in prompt_lower:
-            # Phase Check Sécurité
-            return (
-                "AUDIT SÉCURITÉ :\n"
-                "- Aucune injection détectée.\n"
-                "- Validation stricte des entrées.\n"
-                "- Pas de fuite de mémoire ou de ressources.\n"
-                "- Niveau de sécurité : Conforme."
-            )
-
-        if "feedback correctif" in prompt_lower:
-            # Phase Feedback
-            return (
-                "- Corriger la validation des entrées pour refuser les valeurs None.\n"
-                "- Ajouter une gestion des exceptions pour les timeouts.\n"
-                "- Respecter les types stricts."
-            )
-
-        if "technical writer & git master" in prompt_lower or "documentation technique" in prompt_lower:
-            # Phase Doc & Commit
-            return (
-                "## DOCUMENTATION TECHNIQUE\n"
-                "Module de traitement de données robuste avec typage statique et gestion d'erreurs intégrée.\n\n"
-                "## PROPOSITION DE COMMIT GIT\n"
-                "```git\n"
-                "feat(core): implement robust data processing pipeline with validated contracts\n\n"
-                "- Add schema validation and type hints\n"
-                "- Handle invalid data exceptions gracefully\n"
-                "```"
-            )
-
-        return f"[Simulation {model}] Réponse synthétique pour l'instruction."
