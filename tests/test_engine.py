@@ -146,14 +146,17 @@ class TestDiffFiltering(unittest.TestCase):
         self.assertIn("package-lock.json", DEFAULT_DIFF_EXCLUDES)
 
     def test_orchestrator_tells_the_reviewers_what_was_left_out(self):
-        self.repo.write("package-lock.json", '{"lockfileVersion": 3}\n')
         seen = []
+        repo_path = self.repo.path
 
         class SpyClaude(ClaudeCliClient):
             def run(self, prompt, model, **kwargs):
+                text = super().run(prompt, model, **kwargs)
+                if kwargs.get("role") is Role.DEV:  # l'agent de dev régénère le lockfile (un WIP utilisateur serait mis en réserve)
+                    (repo_path / "package-lock.json").write_text('{"lockfileVersion": 3}\n', encoding="utf-8")
                 if kwargs.get("role") is Role.QUALITY:
                     seen.append(prompt)
-                return super().run(prompt, model, **kwargs)
+                return text
 
         MultiAgentOrchestrator(
             claude_client=SpyClaude(mock_mode=True), jev_client=ModerateJev("x"), project_dir=str(self.repo.path),
