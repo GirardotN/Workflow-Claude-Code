@@ -255,17 +255,23 @@ class ClaudeCliClient:
         logger.debug(f"Exécution Claude CLI : model={model}, cwd={cwd}, prompt={len(prompt)} caractères (stdin)")
         start_t = time.perf_counter()
         try:
-            proc = subprocess.run(
+            # Octets exacts : en mode texte, Python convertirait chaque 
+ du prompt en 
+ sous Windows.
+            raw = subprocess.run(
                 cmd,
-                input=prompt,
+                input=prompt.encode("utf-8"),
                 capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
                 shell=False,
                 cwd=cwd,
                 env=sanitized_env(self.allow_api_key),
                 timeout=timeout,
+            )
+            proc = subprocess.CompletedProcess(
+                raw.args,
+                raw.returncode,
+                stdout=raw.stdout.decode("utf-8", errors="replace"),
+                stderr=raw.stderr.decode("utf-8", errors="replace"),
             )
         except FileNotFoundError:
             raise ClaudeCliError(

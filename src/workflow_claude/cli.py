@@ -8,9 +8,10 @@ import logging
 import sys
 from pathlib import Path
 
-from .clients.claude_cli import ClaudeCliClient
+from .clients.claude_cli import ClaudeCliClient, detected_billing_env
 from .clients.jev_client import JevClient
 from .config import (
+    ALLOW_API_KEY,
     CLAUDE_BIN_PATH,
     DEFAULT_ALLOW_BASH,
     DEFAULT_RUN_TESTS,
@@ -19,6 +20,7 @@ from .config import (
     MOCK_SERVICES,
     TYPESAFE_API_KEY,
 )
+from .doctor import run_doctor
 from .models import StepRecord
 from .orchestrator import MultiAgentOrchestrator
 from .ui.terminal import confirm_action, format_colored_diff
@@ -133,7 +135,7 @@ def main():
         "--allow-bash",
         action="store_true",
         default=DEFAULT_ALLOW_BASH,
-        help="Autoriser Claude à exécuter l'outil Bash (défaut: désactivé pour sécurité)",
+        help="Autoriser l'outil Bash pour l'agent de développement, restreint à une liste blanche de commandes (tests, lecture) ; git qui modifie l'état et rm/curl/sudo restent interdits (défaut: désactivé)",
     )
     parser.add_argument(
         "--run-tests",
@@ -160,6 +162,18 @@ def main():
         help="Répertoire où persister le rapport d'audit et la documentation",
     )
     parser.add_argument(
+        "--allow-api-key",
+        action="store_true",
+        default=ALLOW_API_KEY,
+        help="Laisser passer ANTHROPIC_API_KEY & co au CLI Claude (FACTURATION À L'USAGE). "
+             "Par défaut ces variables sont retirées pour n'utiliser que l'abonnement.",
+    )
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Vérifier l'environnement (git, CLI Claude, session, options, clés) sans consommer de quota, puis quitter",
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Activer la journalisation détaillée de débogage",
@@ -167,6 +181,9 @@ def main():
 
     args = parser.parse_args()
     setup_logging(args.verbose)
+
+    if args.doctor:
+        sys.exit(run_doctor(ClaudeCliClient(allow_api_key=args.allow_api_key), allow_api_key=args.allow_api_key))
 
     print("\n" + "=" * 70)
     print("🚀 ORCHESTRATEUR MULTI-AGENTS CLAUDE & TYPESAFE JEV")
@@ -188,7 +205,15 @@ def main():
     print(f"• Workspace        : {args.workspace}")
     print("=" * 70 + "\n")
 
-    claude_client = ClaudeCliClient(mock_mode=args.mock)
+    billing_vars = detected_billing_env()
+    if billing_vars and not args.mock:
+        if args.allow_api_key:
+            print(f"⚠️ {', '.join(billing_vars)} détecté(s) et --allow-api-key actif : les appels Claude peuvent être FACTURÉS À L'USAGE.\n")
+        else:
+            print(f"ℹ️ {', '.join(billing_vars)} détecté(s) dans l'environnement : retiré(s) du sous-processus Claude "
+                  "(abonnement uniquement). --allow-api-key pour les conserver.\n")
+
+    claude_client = ClaudeCliClient(mock_mode=args.mock, allow_api_key=args.allow_api_key)
     jev_client = JevClient(mock_mode=args.mock)
 
     orchestrator = MultiAgentOrchestrator(

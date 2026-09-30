@@ -6,6 +6,8 @@ l'isolation stricte des contextes et les garde-fous anti-dérive.
 
 import logging
 import re
+import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Callable, Optional, Tuple
@@ -31,6 +33,8 @@ from .models import (
     WorkflowExecutionReport,
     WorkflowType,
 )
+from .roles import Role
+from .tool_policy import policy_for
 from .ui.terminal import Spinner
 
 __all__ = [
@@ -135,6 +139,7 @@ class MultiAgentOrchestrator:
         # retourne True pour fusionner dans la branche d'origine. Sans callback : pas de fusion.
         self.on_merge_decision = on_merge_decision
         self.git = GitClient(self.project_dir) if self.project_dir else None
+        self._isolated_cwd: Optional[str] = None
 
     def run(self, prompt_simple: str, raise_on_failure: bool = False) -> WorkflowExecutionReport:
         """
@@ -152,10 +157,42 @@ class MultiAgentOrchestrator:
         report.is_in_repo = is_in_repo
         report.project_dir = str(self.project_dir) if self.project_dir else None
 
-        if is_in_repo:
-            return self._run_in_repo(prompt_simple, report, raise_on_failure=raise_on_failure)
-        else:
+        try:
+            if is_in_repo:
+                return self._run_in_repo(prompt_simple, report, raise_on_failure=raise_on_failure)
             return self._run_standalone(prompt_simple, report, raise_on_failure=raise_on_failure)
+        finally:
+            self._cleanup_isolated_cwd()
+
+    def _isolated_dir(self) -> str:
+        """Répertoire temporaire vide : les agents « texte seul » n'y voient aucun fichier du projet."""
+        if self._isolated_cwd is None or not Path(self._isolated_cwd).is_dir():
+            self._isolated_cwd = tempfile.mkdtemp(prefix="workflow-isolated-")
+        return self._isolated_cwd
+
+    def _cleanup_isolated_cwd(self) -> None:
+        if self._isolated_cwd:
+            shutil.rmtree(self._isolated_cwd, ignore_errors=True)
+            self._isolated_cwd = None
+
+    def _call_claude(self, role: Role, prompt: str, model: str, cwd: Optional[str] = None, standalone: bool = False) -> str:
+        """
+        Appel à Claude avec la politique d'outils du rôle (voir tool_policy.py) :
+        - relecteurs (qualité, sécurité, feedback, doc) et mode Standalone : AUCUN outil, dans un
+          répertoire vide → l'agent ne peut pas lire le dépôt, il ne voit que le prompt ;
+        - spécification : lecture seule ; développement : édition (+ Bash restreint si --allow-bash).
+        """
+        if standalone or role.is_isolated_reviewer:
+            return self.claude.run(prompt, model=model, cwd=self._isolated_dir(), tools="", role=role)
+        policy = policy_for(role, allow_bash=self.allow_bash)
+        options = {"cwd": cwd, "tools": policy.tools, "role": role}
+        if policy.permission_mode:
+            options["permission_mode"] = policy.permission_mode
+        if policy.allowed_tools:
+            options["allowed_tools"] = policy.allowed_tools
+        if policy.disallowed_tools:
+            options["disallowed_tools"] = policy.disallowed_tools
+        return self.claude.run(prompt, model=model, **options)
 
     def _run_in_repo(
         self,
@@ -253,12 +290,7 @@ class MultiAgentOrchestrator:
         )
         t0 = time.perf_counter()
         with Spinner("Exploration du codebase et rédaction de la spécification in-situ..."):
-            spec_complexe = self.claude.run(
-                spec_prompt,
-                model=MODEL_SONNET,
-                cwd=str(self.project_dir),
-                tools="Read,Grep,Glob",
-            )
+            spec_complexe = self._call_claude(Role.SPEC, spec_prompt, MODEL_SONNET, cwd=str(self.project_dir))
         dur = time.perf_counter() - t0
         report.spec_complexe = spec_complexe
         self._record_step(report, "1_EXPLORATION_ET_SPEC", MODEL_SONNET, spec_prompt, spec_complexe, dur)
@@ -297,11 +329,6 @@ class MultiAgentOrchestrator:
         security_model = MODEL_SONNET
         feedback_secu_model = MODEL_SONNET if is_complexe else MODEL_HAIKU
         doc_commit_model = MODEL_SONNET if is_simple else MODEL_HAIKU
-
-        # Configuration des outils pour l'agent de développement (sandbox Bash)
-        dev_tools = "Read,Edit,Write,Grep,Glob"
-        if self.allow_bash:
-            dev_tools += ",Bash"
 
         # =========================================================================
         # MACHINE À ÉTATS IN-REPO : DEV IN-SITU <-> TESTS <-> QUALITÉ (<-> SÉCURITÉ)
@@ -360,13 +387,7 @@ class MultiAgentOrchestrator:
 
                 t0 = time.perf_counter()
                 with Spinner(f"Développement chirurgical in-situ ({dev_model})..."):
-                    self.claude.run(
-                        dev_prompt,
-                        model=dev_model,
-                        cwd=str(self.project_dir),
-                        tools=dev_tools,
-                        permission_mode="acceptEdits",
-                    )
+                    self._call_claude(Role.DEV, dev_prompt, dev_model, cwd=str(self.project_dir))
                 dur = time.perf_counter() - t0
 
                 # Capture du diff réel dans le dépôt Git (y compris nouveaux fichiers untracked via intent-to-add)
@@ -444,7 +465,7 @@ class MultiAgentOrchestrator:
                 )
                 t0 = time.perf_counter()
                 with Spinner(f"Audit Qualité sur le git diff ({quality_model})..."):
-                    review_qualite = self.claude.run(quality_prompt, model=quality_model)
+                    review_qualite = self._call_claude(Role.QUALITY, quality_prompt, quality_model)
                 dur = time.perf_counter() - t0
                 report.review_qualite = review_qualite
                 self._record_step(
@@ -471,7 +492,7 @@ class MultiAgentOrchestrator:
                         f"{review_qualite}"
                     )
                     t0 = time.perf_counter()
-                    dernier_feedback = self.claude.run(fb_prompt, model=feedback_bug_model)
+                    dernier_feedback = self._call_claude(Role.FEEDBACK, fb_prompt, feedback_bug_model)
                     dur = time.perf_counter() - t0
                     self._record_step(
                         report,
@@ -503,7 +524,7 @@ class MultiAgentOrchestrator:
                 )
                 t0 = time.perf_counter()
                 with Spinner(f"Audit Cyber-Sécurité sur le git diff ({security_model})..."):
-                    review_securite = self.claude.run(secu_prompt, model=security_model)
+                    review_securite = self._call_claude(Role.SECURITY, secu_prompt, security_model)
                 dur = time.perf_counter() - t0
                 report.review_securite = review_securite
                 self._record_step(
@@ -530,7 +551,7 @@ class MultiAgentOrchestrator:
                         f"{review_securite}"
                     )
                     t0 = time.perf_counter()
-                    dernier_feedback = self.claude.run(fb_secu_prompt, model=feedback_secu_model)
+                    dernier_feedback = self._call_claude(Role.FEEDBACK, fb_secu_prompt, feedback_secu_model)
                     dur = time.perf_counter() - t0
                     self._record_step(
                         report,
@@ -557,7 +578,7 @@ class MultiAgentOrchestrator:
         )
         t0 = time.perf_counter()
         with Spinner(f"Génération de la documentation et du commit ({doc_commit_model})..."):
-            doc_commit = self.claude.run(doc_prompt, model=doc_commit_model)
+            doc_commit = self._call_claude(Role.DOC, doc_prompt, doc_commit_model)
         dur = time.perf_counter() - t0
         report.doc_et_commit = doc_commit
         self._record_step(report, "FINAL_DOC_ET_COMMIT", doc_commit_model, doc_prompt, doc_commit, dur)
@@ -629,7 +650,7 @@ class MultiAgentOrchestrator:
             f"Demande : {prompt_simple}"
         )
         t0 = time.perf_counter()
-        spec_complexe = self.claude.run(spec_prompt, model=MODEL_SONNET)
+        spec_complexe = self._call_claude(Role.SPEC, spec_prompt, MODEL_SONNET, standalone=True)
         duration = time.perf_counter() - t0
         report.spec_complexe = spec_complexe
         self._record_step(
@@ -727,7 +748,7 @@ class MultiAgentOrchestrator:
                     )
 
                 t0 = time.perf_counter()
-                code_produit = self.claude.run(dev_prompt, model=dev_model)
+                code_produit = self._call_claude(Role.DEV, dev_prompt, dev_model, standalone=True)
                 dur = time.perf_counter() - t0
                 report.code_produit = code_produit
                 self._record_step(
@@ -754,7 +775,7 @@ class MultiAgentOrchestrator:
                     f"CODE À ANALYSER :\n{code_produit}"
                 )
                 t0 = time.perf_counter()
-                review_qualite = self.claude.run(quality_prompt, model=quality_model)
+                review_qualite = self._call_claude(Role.QUALITY, quality_prompt, quality_model, standalone=True)
                 dur = time.perf_counter() - t0
                 report.review_qualite = review_qualite
                 self._record_step(
@@ -780,7 +801,7 @@ class MultiAgentOrchestrator:
                         f"{review_qualite}"
                     )
                     t0 = time.perf_counter()
-                    dernier_feedback = self.claude.run(fb_prompt, model=feedback_bug_model)
+                    dernier_feedback = self._call_claude(Role.FEEDBACK, fb_prompt, feedback_bug_model, standalone=True)
                     dur = time.perf_counter() - t0
                     self._record_step(
                         report,
@@ -811,7 +832,7 @@ class MultiAgentOrchestrator:
                     f"REVIEW QUALITÉ PRÉALABLE :\n{review_qualite}"
                 )
                 t0 = time.perf_counter()
-                review_securite = self.claude.run(secu_prompt, model=security_model)
+                review_securite = self._call_claude(Role.SECURITY, secu_prompt, security_model, standalone=True)
                 dur = time.perf_counter() - t0
                 report.review_securite = review_securite
                 self._record_step(
@@ -837,7 +858,7 @@ class MultiAgentOrchestrator:
                         f"{review_securite}"
                     )
                     t0 = time.perf_counter()
-                    dernier_feedback = self.claude.run(fb_secu_prompt, model=feedback_secu_model)
+                    dernier_feedback = self._call_claude(Role.FEEDBACK, fb_secu_prompt, feedback_secu_model, standalone=True)
                     dur = time.perf_counter() - t0
                     self._record_step(
                         report,
@@ -864,7 +885,7 @@ class MultiAgentOrchestrator:
             f"CODE VALIDÉ :\n{code_produit}"
         )
         t0 = time.perf_counter()
-        doc_commit = self.claude.run(doc_prompt, model=doc_commit_model)
+        doc_commit = self._call_claude(Role.DOC, doc_prompt, doc_commit_model, standalone=True)
         dur = time.perf_counter() - t0
         report.doc_et_commit = doc_commit
         self._record_step(
