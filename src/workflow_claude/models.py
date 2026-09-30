@@ -86,5 +86,7 @@ class WorkflowExecutionReport:
     tests_output: str = ""
     baseline_tests_passed: Optional[bool] = None
     merged: bool = False                          # branche d'isolation fusionnée dans la branche d'origine
+    jev_mode: str = ""                            # "live" (TypeSafe) ou "mock" (simulation, validations NON fiables)
+    decisions: List[dict] = field(default_factory=list)  # décisions Jev : étape, résultat, probabilité, latence, tokens
     stash_restored: Optional[bool] = None         # None = aucun stash créé ; False = conflit (stash conservé)
 

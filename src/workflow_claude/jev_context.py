@@ -103,3 +103,14 @@ def build_validation_context(
 def prepare_context(text: str, max_chars: int = 60000, extra_secrets: Optional[List[str]] = None) -> str:
     """Masque et plafonne un texte libre (spécification envoyée à Jev pour le routage)."""
     return truncate_middle(mask_secrets(text or "", extra_secrets), max_chars)
+
+
+_VERDICT_RE = re.compile(r"(?im)^[\s*`>#_-]*VERDICT\s*:\s*(PASS|FAIL)\b")
+
+
+def parse_verdict(review: str) -> Optional[bool]:
+    """Dernier `VERDICT: PASS|FAIL` d'une revue (True = PASS, False = FAIL), None s'il est absent."""
+    matches = _VERDICT_RE.findall(review or "")
+    if not matches:
+        return None
+    return matches[-1].upper() == "PASS"

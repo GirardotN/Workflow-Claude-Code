@@ -21,12 +21,15 @@ from .config import (
     DEFAULT_ALLOW_BASH,
     DEFAULT_RUN_TESTS,
     DEFAULT_USE_BRANCH,
+    JEV_MAX_STATE_CHARS,
+    JEV_SEND,
     MAX_RETRIES,
     MODEL_HAIKU,
     MODEL_OPUS,
     MODEL_SONNET,
 )
 from .isolation import IsolatedRun, WorkflowPreconditionError
+from .jev_context import build_validation_context, parse_verdict, prepare_context
 from .models import (
     DevSpecialty,
     StepRecord,
@@ -46,6 +49,25 @@ __all__ = [
 ]
 
 logger = logging.getLogger("orchestrator")
+
+# Les relecteurs terminent par un verdict lisible par machine ; il sert de contrôle de cohérence avec Jev.
+VERDICT_INSTRUCTION = (
+    "\n\nTermine OBLIGATOIREMENT ta réponse par une dernière ligne exactement `VERDICT: PASS` "
+    "(aucun défaut bloquant) ou `VERDICT: FAIL` (au moins un défaut bloquant)."
+)
+
+# Descriptions des options soumises à Jev (sinon il ne voit que les libellés)
+COMPLEXITY_DESCRIPTIONS = {
+    WorkflowType.SIMPLE.value: "Modification locale et peu risquée : un ou deux fichiers, sans changement d'architecture ni de sécurité.",
+    WorkflowType.MOYENNE.value: "Plusieurs fichiers, logique métier, API ou aspects de sécurité à soigner, sans refonte d'architecture.",
+    WorkflowType.COMPLEXE.value: "Refonte, nouvelle architecture ou changement transversal à fort risque (données, sécurité, concurrence).",
+}
+SPECIALTY_DESCRIPTIONS = {
+    DevSpecialty.CSHARP.value: "Code C# / .NET (fichiers .cs, .csproj).",
+    DevSpecialty.NODEJS.value: "Code JavaScript/TypeScript côté serveur ou outillage Node.js (package.json, npm).",
+    DevSpecialty.UI.value: "Interface utilisateur web : React, Vue, HTML, CSS, composants front-end.",
+    DevSpecialty.PYTHON.value: "Code Python (fichiers .py, pyproject, pytest, FastAPI, Django, Flask).",
+}
 
 LANG_TO_EXT = {
     "python": ".py",
@@ -121,6 +143,8 @@ class MultiAgentOrchestrator:
         run_tests: bool = DEFAULT_RUN_TESTS,
         on_step_callback: Optional[Callable[[StepRecord], None]] = None,
         on_merge_decision: Optional[Callable[[WorkflowExecutionReport], bool]] = None,
+        jev_send: str = JEV_SEND,
+        jev_max_chars: int = JEV_MAX_STATE_CHARS,
     ):
         self.claude = claude_client or ClaudeCliClient()
         self.jev = jev_client or JevClient()
@@ -140,6 +164,10 @@ class MultiAgentOrchestrator:
         self.on_merge_decision = on_merge_decision
         self.git = GitClient(self.project_dir) if self.project_dir else None
         self._isolated_cwd: Optional[str] = None
+        if jev_send not in ("full", "review-only"):
+            raise ValueError(f"jev_send doit valoir 'full' ou 'review-only' (reçu : {jev_send!r})")
+        self.jev_send = jev_send
+        self.jev_max_chars = jev_max_chars
 
     def run(self, prompt_simple: str, raise_on_failure: bool = False) -> WorkflowExecutionReport:
         """
@@ -148,6 +176,7 @@ class MultiAgentOrchestrator:
         et le mode Standalone (génération de fichier neuf dans output/).
         """
         report = WorkflowExecutionReport(prompt_simple=prompt_simple)
+        report.jev_mode = getattr(self.jev, "mode", "")
 
         # Détection du mode : In-Repo si project_dir est un dépôt Git valide et que standalone_mode n'est pas forcé
         is_in_repo = False
@@ -299,22 +328,22 @@ class MultiAgentOrchestrator:
         # ÉTAPE 2 : Aiguillage de complexité et spécialité par JEV
         # =========================================================================
         logger.info(">>> Étape 2 : Aiguillage de complexité et spécialité dev via Jev")
-        workflow_type_str = self.jev.classify(
-            spec_complexe,
+        workflow_type_str = self._jev_classify(
+            report, "ROUTAGE_COMPLEXITE", spec_complexe,
             [WorkflowType.SIMPLE.value, WorkflowType.MOYENNE.value, WorkflowType.COMPLEXE.value],
-            question_label="Quel est le niveau de complexité de cette tâche de refactoring / modification ?",
+            "Quel est le niveau de complexité de cette tâche de refactoring / modification ?", COMPLEXITY_DESCRIPTIONS,
         )
         report.workflow_type = WorkflowType.from_str(workflow_type_str)
 
-        dev_specialty_str = self.jev.classify(
-            spec_complexe,
+        dev_specialty_str = self._jev_classify(
+            report, "ROUTAGE_SPECIALITE", spec_complexe,
             [
                 DevSpecialty.CSHARP.value,
                 DevSpecialty.NODEJS.value,
                 DevSpecialty.UI.value,
                 DevSpecialty.PYTHON.value,
             ],
-            question_label="Quelle est la spécialité technique du développeur requise pour ce projet ?",
+            "Quelle est la spécialité technique du développeur requise pour ce projet ?", SPECIALTY_DESCRIPTIONS,
         )
         report.dev_specialty = DevSpecialty.from_str(dev_specialty_str)
 
@@ -462,6 +491,7 @@ class MultiAgentOrchestrator:
                     "les modifications apportées au projet pour évaluer la qualité, la robustesse, "
                     "l'absence de régression et le respect des conventions existantes. Sois intraitable sur les bugs :\n\n"
                     f"GIT DIFF :\n{diff_content}"
+                    f"{VERDICT_INSTRUCTION}"
                 )
                 t0 = time.perf_counter()
                 with Spinner(f"Audit Qualité sur le git diff ({quality_model})..."):
@@ -478,9 +508,10 @@ class MultiAgentOrchestrator:
                 )
 
                 logger.info("Validation Qualité soumise à Jev (noul/binary)...")
-                decision_qualite = self.jev.validate(
-                    context=f"Git Diff :\n{diff_content}\n\nReview Qualité :\n{review_qualite}",
-                    criteria="Ce diff git est-il exempt de bugs, robuste et conforme aux critères de qualité logicielle ?",
+                decision_qualite = self._jev_validate(
+                    report, f"VALIDATION_QUALITE_CYCLE_{iter_count}", diff_content, review_qualite, "Review Qualité",
+                    "Ce diff git est-il exempt de bugs, robuste et conforme aux critères de qualité logicielle ?",
+                    diff_label="Git Diff",
                 )
 
                 if not decision_qualite:
@@ -521,6 +552,7 @@ class MultiAgentOrchestrator:
                     "(injections, failles logiques, fuite de données, gestion non sécurisée des secrets, régressions) :\n\n"
                     f"GIT DIFF :\n{diff_content}\n\n"
                     f"REVIEW QUALITÉ PRÉALABLE :\n{review_qualite}"
+                    f"{VERDICT_INSTRUCTION}"
                 )
                 t0 = time.perf_counter()
                 with Spinner(f"Audit Cyber-Sécurité sur le git diff ({security_model})..."):
@@ -537,9 +569,10 @@ class MultiAgentOrchestrator:
                 )
 
                 logger.info("Validation Sécurité soumise à Jev (noul/binary)...")
-                decision_secu = self.jev.validate(
-                    context=f"Git Diff :\n{diff_content}\n\nReview Sécurité :\n{review_securite}",
-                    criteria="Le code modifié dans ce git diff est-il sécurisé et exempt de toute vulnérabilité de sécurité ?",
+                decision_secu = self._jev_validate(
+                    report, f"VALIDATION_SECU_CYCLE_{iter_count}", diff_content, review_securite, "Review Sécurité",
+                    "Le code modifié dans ce git diff est-il sécurisé et exempt de toute vulnérabilité de sécurité ?",
+                    diff_label="Git Diff",
                 )
 
                 if not decision_secu:
@@ -666,22 +699,22 @@ class MultiAgentOrchestrator:
         # ÉTAPE 2 : Choix du workflow et de la spécialité par JEV
         # =========================================================================
         logger.info(">>> Étape 2 : Aiguillage de complexité et spécialité dev via Jev")
-        workflow_type_str = self.jev.classify(
-            spec_complexe,
+        workflow_type_str = self._jev_classify(
+            report, "ROUTAGE_COMPLEXITE", spec_complexe,
             [WorkflowType.SIMPLE.value, WorkflowType.MOYENNE.value, WorkflowType.COMPLEXE.value],
-            question_label="Quel est le niveau de complexité de cette tâche ?",
+            "Quel est le niveau de complexité de cette tâche ?", COMPLEXITY_DESCRIPTIONS,
         )
         report.workflow_type = WorkflowType.from_str(workflow_type_str)
 
-        dev_specialty_str = self.jev.classify(
-            spec_complexe,
+        dev_specialty_str = self._jev_classify(
+            report, "ROUTAGE_SPECIALITE", spec_complexe,
             [
                 DevSpecialty.CSHARP.value,
                 DevSpecialty.NODEJS.value,
                 DevSpecialty.UI.value,
                 DevSpecialty.PYTHON.value,
             ],
-            question_label="Quelle est la spécialité technique du développeur requise ?",
+            "Quelle est la spécialité technique du développeur requise ?", SPECIALTY_DESCRIPTIONS,
         )
         report.dev_specialty = DevSpecialty.from_str(dev_specialty_str)
 
@@ -773,6 +806,7 @@ class MultiAgentOrchestrator:
                     "pour évaluer la qualité, la robustesse, la conformité aux bonnes pratiques "
                     "et détecter tout bug ou régression potentielle. Sois intraitable sur les bugs :\n\n"
                     f"CODE À ANALYSER :\n{code_produit}"
+                    f"{VERDICT_INSTRUCTION}"
                 )
                 t0 = time.perf_counter()
                 review_qualite = self._call_claude(Role.QUALITY, quality_prompt, quality_model, standalone=True)
@@ -788,9 +822,10 @@ class MultiAgentOrchestrator:
                 )
 
                 logger.info("Validation Qualité / Bug soumise à Jev (noul/binary)...")
-                decision_qualite = self.jev.validate(
-                    context=f"Code :\n{code_produit}\n\nReview Qualité :\n{review_qualite}",
-                    criteria="Le code est-il exempt de bugs, robuste et conforme aux critères de qualité logicielle ?",
+                decision_qualite = self._jev_validate(
+                    report, f"VALIDATION_QUALITE_CYCLE_{iter_count}", code_produit, review_qualite, "Review Qualité",
+                    "Le code est-il exempt de bugs, robuste et conforme aux critères de qualité logicielle ?",
+                    diff_label="Code",
                 )
 
                 if not decision_qualite:
@@ -830,6 +865,7 @@ class MultiAgentOrchestrator:
                     "(injections, failles logiques, fuites de données, gestion non sécurisée des secrets, déni de service) :\n\n"
                     f"CODE PRODUIT :\n{code_produit}\n\n"
                     f"REVIEW QUALITÉ PRÉALABLE :\n{review_qualite}"
+                    f"{VERDICT_INSTRUCTION}"
                 )
                 t0 = time.perf_counter()
                 review_securite = self._call_claude(Role.SECURITY, secu_prompt, security_model, standalone=True)
@@ -845,9 +881,10 @@ class MultiAgentOrchestrator:
                 )
 
                 logger.info("Validation Sécurité soumise à Jev (noul/binary)...")
-                decision_secu = self.jev.validate(
-                    context=f"Code :\n{code_produit}\n\nReview Sécurité :\n{review_securite}",
-                    criteria="Le code est-il sécurisé et exempt de toute vulnérabilité de sécurité ?",
+                decision_secu = self._jev_validate(
+                    report, f"VALIDATION_SECU_CYCLE_{iter_count}", code_produit, review_securite, "Review Sécurité",
+                    "Le code est-il sécurisé et exempt de toute vulnérabilité de sécurité ?",
+                    diff_label="Code",
                 )
 
                 if not decision_secu:
@@ -904,6 +941,56 @@ class MultiAgentOrchestrator:
         report.is_success = True
         logger.info(f"Workflow complété avec succès en {iter_count} itération(s) !")
         return report
+
+    # ------------------------------------------------------------------
+    # Jev : contexte masqué/plafonné, trace des décisions, contrôle de cohérence
+    # ------------------------------------------------------------------
+    def _jev_secrets(self) -> list:
+        """Valeurs exactes à ne jamais envoyer au service (la clé TypeSafe elle-même)."""
+        key = getattr(self.jev, "api_key", "")
+        return [key] if key else []
+
+    def _record_decision(self, report: WorkflowExecutionReport, step: str, **extra) -> None:
+        decision = getattr(self.jev, "last_decision", None)
+        if decision is None or not hasattr(decision, "as_dict"):
+            return
+        report.decisions.append({"step": step, **decision.as_dict(), **extra})
+
+    def _jev_classify(self, report, step, context, choices, question_label, descriptions=None) -> str:
+        """Routage par Jev sur un contexte masqué et plafonné."""
+        safe_context = prepare_context(context, self.jev_max_chars, self._jev_secrets())
+        kwargs = {"descriptions": descriptions} if getattr(self.jev, "supports_descriptions", False) else {}
+        choice = self.jev.classify(safe_context, choices, question_label=question_label, **kwargs)
+        self._record_decision(report, step)
+        return choice
+
+    def _jev_validate(self, report, step, diff_text, review, review_label, criteria, diff_label="Git Diff") -> bool:
+        """
+        Validation binaire par Jev. Le diff est masqué (secrets) et plafonné ; avec jev_send="review-only"
+        il n'est pas envoyé du tout. Un verdict de relecteur contradictoire avec Jev est journalisé.
+        """
+        context = build_validation_context(
+            diff_text,
+            review,
+            review_label,
+            mode=self.jev_send,
+            max_chars=self.jev_max_chars,
+            diff_label=diff_label,
+            extra_secrets=self._jev_secrets(),
+        )
+        valid = self.jev.validate(context=context, criteria=criteria)
+
+        reviewer_verdict = parse_verdict(review)
+        extra = {}
+        if reviewer_verdict is not None:
+            extra = {"reviewer_verdict": "PASS" if reviewer_verdict else "FAIL", "consistent": reviewer_verdict == bool(valid)}
+            if reviewer_verdict != bool(valid):
+                logger.warning(
+                    f"Incohérence à l'étape {step} : le relecteur conclut {extra['reviewer_verdict']} "
+                    f"mais Jev {'valide' if valid else 'rejette'}. La décision de Jev est appliquée."
+                )
+        self._record_decision(report, step, **extra)
+        return bool(valid)
 
     def _run_tests_clean(self) -> Optional[TestResult]:
         """

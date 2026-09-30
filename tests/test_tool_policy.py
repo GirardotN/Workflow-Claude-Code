@@ -43,7 +43,7 @@ class ModerateJev(JevClient):
     def __init__(self):
         super().__init__(mock_mode=True)
 
-    def classify(self, context, choices, question_label=""):
+    def classify(self, context, choices, question_label="", **kwargs):
         return WorkflowType.MOYENNE.value if WorkflowType.SIMPLE.value in choices else choices[0]
 
 

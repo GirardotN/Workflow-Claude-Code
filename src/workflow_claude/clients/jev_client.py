@@ -82,6 +82,8 @@ class JevClient:
     Client de décision rapide TypeSafe Jev : routage (choice) et validation binaire probabiliste (noul).
     """
 
+    supports_descriptions = True  # `classify` accepte des descriptions d'options
+
     def __init__(
         self,
         api_key: str = TYPESAFE_API_KEY,
