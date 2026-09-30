@@ -5,7 +5,6 @@ la modification chirurgicale in-situ, la revue sur git diff,
 le rollback automatique sur rejet et le commit automatique.
 """
 
-import os
 import subprocess
 import tempfile
 import unittest
@@ -14,7 +13,6 @@ from pathlib import Path
 from clients.claude_cli import ClaudeCliClient
 from clients.git_client import GitClient
 from clients.jev_client import JevClient
-from models import DevSpecialty, WorkflowType
 from orchestrator import MultiAgentOrchestrator
 
 
@@ -23,12 +21,16 @@ class TestInRepoWorkflow(unittest.TestCase):
     def setUp(self):
         # Création d'un dépôt Git temporaire multi-fichiers
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.repo_path = Path(self.temp_dir.name)
+        # resolve() : l'orchestrateur résout le chemin (macOS /var -> /private/var,
+        # Windows 8.3 RUNNER~1 -> nom long), le test doit comparer des chemins résolus.
+        self.repo_path = Path(self.temp_dir.name).resolve()
 
-        # Initialisation de Git
-        subprocess.run(["git", "init"], cwd=self.repo_path, check=True, capture_output=True)
+        # Initialisation de Git (configuration locale déterministe, indépendante de l'OS)
+        subprocess.run(["git", "init", "-b", "main"], cwd=self.repo_path, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.name", "TestUser"], cwd=self.repo_path, check=True)
         subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=self.repo_path, check=True)
+        subprocess.run(["git", "config", "core.autocrlf", "false"], cwd=self.repo_path, check=True)
+        subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=self.repo_path, check=True)
 
         # Création d'une structure multi-fichiers réaliste (dizaines de composants)
         src_dir = self.repo_path / "src" / "components"

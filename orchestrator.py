@@ -5,17 +5,15 @@ l'isolation stricte des contextes et les garde-fous anti-dérive.
 """
 
 import logging
-import os
 import re
-import subprocess
 import time
 from pathlib import Path
 from typing import Callable, Optional, Tuple
 
-from clients.claude_cli import ClaudeCliClient, ClaudeCliError
+from clients.claude_cli import ClaudeCliClient
 from clients.git_client import GitClient
 from clients.jev_client import JevClient
-from clients.test_runner import TestResult, TestRunner
+from clients.test_runner import TestRunner
 from config import (
     DEFAULT_ALLOW_BASH,
     DEFAULT_ALLOW_DIRTY,
@@ -919,7 +917,7 @@ class MultiAgentOrchestrator:
             # 3. Sauvegarde du rapport d'audit
             report_file = ws_path / "WORKFLOW_AUDIT.md"
             lines = [
-                f"# Rapport d'Exécution Multi-Agents",
+                "# Rapport d'Exécution Multi-Agents",
                 f"- **Mode :** {'In-Repo (Modifications directes)' if report.is_in_repo else 'Standalone'}",
                 f"- **Prompt Initial :** {report.prompt_simple}",
                 f"- **Type de Workflow :** {report.workflow_type.value if report.workflow_type else 'N/A'}",

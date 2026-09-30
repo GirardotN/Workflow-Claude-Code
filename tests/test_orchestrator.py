@@ -5,7 +5,6 @@ les modèles assignés, l'isolation des contextes et les boucles de feedback.
 """
 
 import unittest
-from unittest.mock import MagicMock
 
 from clients.claude_cli import ClaudeCliClient
 from clients.jev_client import JevClient

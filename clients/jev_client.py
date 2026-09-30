@@ -4,11 +4,9 @@ Prend en charge l'endpoint officiel TypeSafe (/v1/systemone) ainsi que le
 schéma direct (/v1/decide), avec gestion d'erreurs et mode simulation/mock.
 """
 
-import json
 import logging
 import re
-import time
-from typing import Any, Dict, List, Optional
+from typing import List
 import requests
 
 from config import (

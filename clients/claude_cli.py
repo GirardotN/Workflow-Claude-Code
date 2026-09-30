@@ -7,7 +7,6 @@ exclusivement sur la session locale active (abonnement Claude Max 5x).
 import json
 import logging
 import os
-import re
 import subprocess
 import time
 from pathlib import Path

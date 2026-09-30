@@ -23,6 +23,18 @@ CYAN = "\033[36m"
 WHITE = "\033[37m"
 
 
+def _safe_print(text: str) -> None:
+    """
+    Affiche une ligne sans jamais lever d'erreur d'encodage : stdout redirigé sous Windows
+    (CI, pipe) utilise souvent cp1252, qui ne sait pas encoder les emojis.
+    """
+    try:
+        print(text, flush=True)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(text.encode(encoding, errors="replace").decode(encoding), flush=True)
+
+
 def is_ansi_supported() -> bool:
     """Détecte si la sortie standard supporte les codes d'échappement ANSI."""
     if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
@@ -52,7 +64,7 @@ class Spinner:
         self.start_time = time.perf_counter()
         if not self.interactive:
             # Mode non-interactif (CI, pipe, fichier) : affichage simple d'une ligne
-            print(f"  ⏳ {self.message}...", flush=True)
+            _safe_print(f"  ⏳ {self.message}...")
             return
 
         self.running = True

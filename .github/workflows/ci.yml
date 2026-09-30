@@ -3,10 +3,42 @@ name: CI
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   pull_request:
     branches: [ "main" ]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install ruff
+        run: python -m pip install ruff
+
+      - name: Ruff check
+        run: ruff check .
+
   test:
     name: Tests (${{ matrix.os }} - Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
@@ -32,6 +64,11 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
+      - name: Show tool versions
+        run: |
+          git --version
+          python --version
+
       - name: Configure Git for tests
         run: |
           git config --global user.name "CI Runner"
@@ -40,3 +77,29 @@ jobs:
       - name: Run unit test suite
         run: |
           python -m unittest discover -s tests -v
+
+  package:
+    name: Package smoke test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the package (non editable)
+        run: python -m pip install .
+
+      - name: Run the installed CLI outside the checkout
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP"
+          workflow --mock --standalone "smoke test"

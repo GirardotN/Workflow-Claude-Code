@@ -11,7 +11,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 logger = logging.getLogger("test_runner")
 
@@ -82,18 +82,22 @@ class TestRunner:
     def run_tests(
         self,
         project_dir: Path,
-        custom_cmd: Optional[str] = None,
+        custom_cmd: Optional[Union[str, List[str]]] = None,
     ) -> Optional[TestResult]:
         """
         Exécute la commande de test dans le répertoire du projet.
+        `custom_cmd` peut être une liste d'arguments (recommandé, portable) ou une chaîne
+        découpée avec shlex (mode POSIX désactivé sous Windows pour préserver les backslashes).
         Retourne un objet TestResult, ou None si aucun test n'a pu être exécuté.
         """
         if custom_cmd:
-            import shlex
-            cmd = shlex.split(custom_cmd)
+            if isinstance(custom_cmd, str):
+                import shlex
+                cmd = shlex.split(custom_cmd, posix=(os.name != "nt"))
+            else:
+                cmd = list(custom_cmd)
         else:
             cmd = self.detect_test_command(project_dir)
-
 
         if not cmd:
             logger.info("Aucune suite de tests automatisée détectée dans le projet.")
