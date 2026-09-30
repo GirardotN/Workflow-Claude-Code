@@ -3,6 +3,8 @@ import unittest
 from unittest import mock
 
 from workflow_claude import doctor
+from workflow_claude.clients.claude_cli import BILLING_ENV_VARS
+from workflow_claude.clients.jev_client import JevApiError, JevAuthError, JevConfigError, JevDecision
 from workflow_claude.doctor import FAIL, OK, WARN, collect_checks, run_doctor
 
 
@@ -26,24 +28,39 @@ class StubClient:
         return self._auth
 
 
+class StubJev:
+    """Double du client Jev : aucun appel réseau."""
+
+    def __init__(self, error=None):
+        self.error = error
+
+    def ping(self):
+        if self.error:
+            raise self.error
+        return JevDecision(kind="noul", mode="live", latency_ms=312)
+
+
+LOGGED_IN = {"loggedIn": True, "authMethod": "claude.ai"}
+
+
 def levels(checks):
     return {label: level for level, label, _ in checks}
 
 
 class TestDoctor(unittest.TestCase):
     def setUp(self):
-        self.clean_env = mock.patch.dict(os.environ, {}, clear=False)
-        self.clean_env.start()
-        self.addCleanup(self.clean_env.stop)
-        for var in doctor.detected_billing_env.__globals__["BILLING_ENV_VARS"]:
+        clean_env = mock.patch.dict(os.environ, {}, clear=False)
+        clean_env.start()
+        self.addCleanup(clean_env.stop)
+        for var in BILLING_ENV_VARS:
             os.environ.pop(var, None)
-        self.jev = mock.patch.object(doctor, "TYPESAFE_API_KEY", "cle-de-test")
-        self.jev.start()
-        self.addCleanup(self.jev.stop)
+
+    def checks(self, client=None, **kwargs):
+        kwargs.setdefault("jev", StubJev())
+        return collect_checks(client or StubClient(auth=LOGGED_IN), **kwargs)
 
     def test_all_good(self):
-        checks = collect_checks(StubClient(auth={"loggedIn": True, "authMethod": "claude.ai"}))
-        result = levels(checks)
+        result = levels(self.checks())
         self.assertEqual(result["Claude Code CLI"], OK)
         self.assertEqual(result["Options du CLI"], OK)
         self.assertEqual(result["Session Claude"], OK)
@@ -51,25 +68,24 @@ class TestDoctor(unittest.TestCase):
         self.assertNotIn(FAIL, result.values())
 
     def test_missing_binary_is_blocking(self):
-        checks = collect_checks(StubClient(found=False))
-        self.assertEqual(levels(checks)["Claude Code CLI"], FAIL)
+        self.assertEqual(levels(self.checks(StubClient(found=False)))["Claude Code CLI"], FAIL)
 
     def test_not_logged_in_is_blocking(self):
-        checks = collect_checks(StubClient(auth={"loggedIn": False, "authMethod": "none"}))
-        self.assertEqual(levels(checks)["Session Claude"], FAIL)
+        client = StubClient(auth={"loggedIn": False, "authMethod": "none"})
+        self.assertEqual(levels(self.checks(client))["Session Claude"], FAIL)
 
     def test_unknown_auth_state_is_only_a_warning(self):
-        self.assertEqual(levels(collect_checks(StubClient(auth=None)))["Session Claude"], WARN)
+        self.assertEqual(levels(self.checks(StubClient(auth=None)))["Session Claude"], WARN)
 
     def test_missing_required_flag_is_blocking_and_optional_one_is_a_warning(self):
         no_tools = ["--print", "--model", "--output-format", "--permission-mode", "--no-session-persistence"]
-        result = levels(collect_checks(StubClient(flags=no_tools, auth={"loggedIn": True})))
+        result = levels(self.checks(StubClient(flags=no_tools, auth=LOGGED_IN)))
         self.assertEqual(result["Options du CLI"], FAIL)
         self.assertEqual(result["Options du CLI (facultatives)"], WARN)
 
     def test_api_key_in_environment_is_reported_as_removed(self):
         with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-secret"}):
-            checks = collect_checks(StubClient(auth={"loggedIn": True}))
+            checks = self.checks()
         detail = next(d for level, label, d in checks if label == "Facturation à l'usage")
         self.assertIn("ANTHROPIC_API_KEY", detail)
         self.assertIn("retiré", detail)
@@ -77,14 +93,47 @@ class TestDoctor(unittest.TestCase):
 
     def test_api_key_with_allow_flag_is_a_warning(self):
         with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-secret"}):
-            checks = collect_checks(StubClient(auth={"loggedIn": True}), allow_api_key=True)
+            checks = self.checks(allow_api_key=True)
         self.assertEqual(levels(checks)["Facturation à l'usage"], WARN)
 
     def test_run_doctor_exit_codes(self):
         lines = []
-        self.assertEqual(run_doctor(StubClient(auth={"loggedIn": True}), out=lines.append), 0)
-        self.assertEqual(run_doctor(StubClient(found=False), out=lines.append), 1)
+        self.assertEqual(run_doctor(StubClient(auth=LOGGED_IN), out=lines.append, jev=StubJev()), 0)
+        self.assertEqual(run_doctor(StubClient(found=False), out=lines.append, jev=StubJev()), 1)
         self.assertTrue(any("bloquant" in line for line in lines))
+
+
+class TestDoctorJev(unittest.TestCase):
+    def jev_level(self, **kwargs):
+        checks = collect_checks(StubClient(auth=LOGGED_IN), **kwargs)
+        return next((level, detail) for level, label, detail in checks if label == "TypeSafe Jev")
+
+    def test_valid_key_reports_latency(self):
+        level, detail = self.jev_level(jev=StubJev())
+        self.assertEqual(level, OK)
+        self.assertIn("312 ms", detail)
+
+    def test_rejected_key_is_blocking(self):
+        level, detail = self.jev_level(jev=StubJev(JevAuthError("Clé TypeSafe refusée (HTTP 401)")))
+        self.assertEqual(level, FAIL)
+        self.assertIn("refusée", detail)
+
+    def test_unreachable_service_is_only_a_warning(self):
+        level, _ = self.jev_level(jev=StubJev(JevApiError("Timeout")))
+        self.assertEqual(level, WARN)
+
+    def test_missing_key_is_blocking_without_mock(self):
+        with mock.patch.object(doctor, "JevClient", side_effect=JevConfigError("Clé TypeSafe absente ... --mock ...")):
+            level, detail = self.jev_level()
+        self.assertEqual(level, FAIL)
+        self.assertIn("--mock", detail)
+
+    def test_mock_mode_is_a_visible_warning_and_makes_no_call(self):
+        stub = mock.Mock()
+        level, detail = self.jev_level(mock=True, jev=stub)
+        self.assertEqual(level, WARN)
+        self.assertIn("SIMULATION", detail)
+        stub.ping.assert_not_called()
 
 
 if __name__ == "__main__":

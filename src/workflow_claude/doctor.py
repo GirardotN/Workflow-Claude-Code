@@ -1,6 +1,7 @@
 """
 Diagnostic d'environnement (`workflow --doctor`) : vérifie, sans consommer de quota Claude,
-que tout ce dont l'orchestrateur dépend est présent et utilisable.
+que tout ce dont l'orchestrateur dépend est présent et utilisable. Seul appel réseau : un ping
+minimal (quelques dizaines de tokens) vers TypeSafe pour valider la clé.
 """
 
 import shutil
@@ -9,7 +10,8 @@ import sys
 from typing import Callable, List, Optional, Tuple
 
 from .clients.claude_cli import ClaudeCliClient, detected_billing_env
-from .config import CLAUDE_BIN_PATH, TYPESAFE_API_KEY
+from .clients.jev_client import JevApiError, JevAuthError, JevClient, JevConfigError
+from .config import CLAUDE_BIN_PATH
 
 OK, WARN, FAIL = "ok", "warn", "fail"
 _ICONS = {OK: "✅", WARN: "⚠️ ", FAIL: "❌"}
@@ -81,13 +83,28 @@ def _claude_checks(client: ClaudeCliClient, allow_api_key: bool) -> List[Check]:
     return checks
 
 
-def _jev_checks() -> List[Check]:
-    if TYPESAFE_API_KEY.strip():
-        return [(OK, "TypeSafe Jev", "TYPESAFE_API_KEY configurée")]
-    return [(WARN, "TypeSafe Jev", "TYPESAFE_API_KEY absente : les validations ne pourront utiliser que --mock")]
+def _jev_checks(mock: bool, jev: Optional[JevClient]) -> List[Check]:
+    if mock:
+        return [(WARN, "TypeSafe Jev", "SIMULATION (--mock) : validations NON fiables, aucun appel réseau")]
+    try:
+        client = jev or JevClient(mock_mode=False)
+    except JevConfigError as e:
+        return [(FAIL, "TypeSafe Jev", str(e))]
+    try:
+        decision = client.ping()
+    except JevAuthError as e:
+        return [(FAIL, "TypeSafe Jev", str(e))]
+    except JevApiError as e:
+        return [(WARN, "TypeSafe Jev", f"clé configurée mais service injoignable : {e}")]
+    return [(OK, "TypeSafe Jev", f"clé valide, service joignable ({decision.latency_ms} ms)")]
 
 
-def collect_checks(client: Optional[ClaudeCliClient] = None, allow_api_key: bool = False) -> List[Check]:
+def collect_checks(
+    client: Optional[ClaudeCliClient] = None,
+    allow_api_key: bool = False,
+    mock: bool = False,
+    jev: Optional[JevClient] = None,
+) -> List[Check]:
     client = client or ClaudeCliClient(binary_path=CLAUDE_BIN_PATH, allow_api_key=allow_api_key)
     python_ok = sys.version_info >= (3, 10)
     checks: List[Check] = [(
@@ -97,7 +114,7 @@ def collect_checks(client: Optional[ClaudeCliClient] = None, allow_api_key: bool
     )]
     checks += _git_checks()
     checks += _claude_checks(client, allow_api_key)
-    checks += _jev_checks()
+    checks += _jev_checks(mock, jev)
     return checks
 
 
@@ -105,10 +122,12 @@ def run_doctor(
     client: Optional[ClaudeCliClient] = None,
     allow_api_key: bool = False,
     out: Callable[[str], None] = print,
+    mock: bool = False,
+    jev: Optional[JevClient] = None,
 ) -> int:
     """Affiche le diagnostic et retourne 0 si aucun point bloquant, 1 sinon."""
     out("\n🩺 DIAGNOSTIC WORKFLOW-CLAUDE-CODE\n" + "=" * 60)
-    checks = collect_checks(client, allow_api_key)
+    checks = collect_checks(client, allow_api_key, mock=mock, jev=jev)
     for level, label, detail in checks:
         out(f"{_ICONS[level]} {label:<28} {detail}")
     failures = sum(1 for level, _, _ in checks if level == FAIL)

@@ -8,22 +8,31 @@ import logging
 import sys
 from pathlib import Path
 
-from .clients.claude_cli import ClaudeCliClient, detected_billing_env
-from .clients.jev_client import JevClient
+from .clients.claude_cli import ClaudeCliClient, ClaudeCliError, detected_billing_env
+from .clients.jev_client import JevApiError, JevClient
 from .config import (
     ALLOW_API_KEY,
     CLAUDE_BIN_PATH,
     DEFAULT_ALLOW_BASH,
     DEFAULT_RUN_TESTS,
     DEFAULT_USE_BRANCH,
+    JEV_SEND,
     MAX_RETRIES,
     MOCK_SERVICES,
-    TYPESAFE_API_KEY,
 )
 from .doctor import run_doctor
+from .isolation import WorkflowPreconditionError
 from .models import StepRecord
 from .orchestrator import MultiAgentOrchestrator
 from .ui.terminal import confirm_action, format_colored_diff
+
+# Codes de sortie (utilisables dans des scripts et en CI)
+EXIT_OK = 0
+EXIT_ERROR = 1          # erreur inattendue ou précondition non remplie (dépôt vide, identité Git absente...)
+EXIT_INCOMPLETE = 2     # workflow terminé sans succès (circuit breaker, commit refusé...)
+EXIT_CLAUDE = 3         # session / quota / timeout du CLI Claude
+EXIT_JEV = 4            # TypeSafe Jev : clé absente ou refusée, service indisponible, réponse invalide
+EXIT_INTERRUPTED = 130  # Ctrl-C
 
 # Support de l'encodage UTF-8 sous Windows (cmd.exe / PowerShell)
 if sys.platform == "win32":
@@ -75,7 +84,7 @@ def ask_merge(report, assume_yes: bool = False) -> bool:
     return merge
 
 
-def main():
+def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description="Orchestrateur Multi-Agents Claude & TypeSafe Jev (Zero crédit Claude API)"
     )
@@ -169,6 +178,13 @@ def main():
              "Par défaut ces variables sont retirées pour n'utiliser que l'abonnement.",
     )
     parser.add_argument(
+        "--jev-send",
+        choices=["full", "review-only"],
+        default=JEV_SEND if JEV_SEND in ("full", "review-only") else "full",
+        help="Données envoyées à TypeSafe Jev pour les validations : 'full' = diff (secrets masqués, plafonné) + revue ; "
+             "'review-only' = revue seule, aucun code transmis",
+    )
+    parser.add_argument(
         "--doctor",
         action="store_true",
         help="Vérifier l'environnement (git, CLI Claude, session, options, clés) sans consommer de quota, puis quitter",
@@ -179,11 +195,18 @@ def main():
         help="Activer la journalisation détaillée de débogage",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     setup_logging(args.verbose)
 
     if args.doctor:
-        sys.exit(run_doctor(ClaudeCliClient(allow_api_key=args.allow_api_key), allow_api_key=args.allow_api_key))
+        return run_doctor(ClaudeCliClient(allow_api_key=args.allow_api_key), allow_api_key=args.allow_api_key, mock=args.mock)
+
+    # Échec rapide : sans clé TypeSafe (et sans --mock), on ne démarre pas (les validations ne seraient pas fiables)
+    try:
+        jev_client = JevClient(mock_mode=args.mock)
+    except JevApiError as e:
+        print(f"\n❌ {e}", file=sys.stderr)
+        return EXIT_JEV
 
     print("\n" + "=" * 70)
     print("🚀 ORCHESTRATEUR MULTI-AGENTS CLAUDE & TYPESAFE JEV")
@@ -200,10 +223,15 @@ def main():
     print(f"• Tests auto       : {'Activés (--run-tests)' if args.run_tests else 'Désactivés (--no-tests)'}")
     print(f"• Outil Bash       : {'Autorisé (--allow-bash)' if args.allow_bash else 'Désactivé (mode sandbox sécurisé)'}")
     print(f"• Claude CLI path  : {CLAUDE_BIN_PATH}")
-    print(f"• TypeSafe API Key : {'Définie' if TYPESAFE_API_KEY else 'Non configurée (fallback mock auto)'}")
+    print(f"• TypeSafe Jev     : {'SIMULATION (--mock)' if args.mock else 'API réelle (clé configurée)'}")
+    if not args.mock:
+        print(f"• Envoi à Jev      : {'revue seule (aucun code transmis)' if args.jev_send == 'review-only' else 'diff (secrets masqués, plafonné) + revue'}")
     print(f"• Max Retries      : {args.max_retries}")
     print(f"• Workspace        : {args.workspace}")
     print("=" * 70 + "\n")
+    if args.mock:
+        print("⚠️  MODE SIMULATION (--mock) : Claude et Jev sont simulés. Les validations NE SONT PAS FIABLES : "
+              "ne l'utilisez pas pour valider du vrai code.\n")
 
     billing_vars = detected_billing_env()
     if billing_vars and not args.mock:
@@ -214,7 +242,6 @@ def main():
                   "(abonnement uniquement). --allow-api-key pour les conserver.\n")
 
     claude_client = ClaudeCliClient(mock_mode=args.mock, allow_api_key=args.allow_api_key)
-    jev_client = JevClient(mock_mode=args.mock)
 
     orchestrator = MultiAgentOrchestrator(
         claude_client=claude_client,
@@ -230,13 +257,26 @@ def main():
         run_tests=args.run_tests,
         on_step_callback=print_step,
         on_merge_decision=lambda rep: ask_merge(rep, assume_yes=args.yes),
+        jev_send=args.jev_send,
     )
 
     try:
         report = orchestrator.run(args.prompt)
+    except KeyboardInterrupt:
+        print("\n⛔ Interrompu (Ctrl-C). Votre dépôt a été remis dans son état d'origine et vos modifications restaurées.", file=sys.stderr)
+        return EXIT_INTERRUPTED
+    except JevApiError as e:
+        print(f"\n❌ TypeSafe Jev : {e}\nLe workflow a été arrêté (aucune validation par défaut). Votre dépôt a été remis en état.", file=sys.stderr)
+        return EXIT_JEV
+    except ClaudeCliError as e:
+        print(f"\n❌ Claude CLI : {e}\nVotre dépôt a été remis en état.", file=sys.stderr)
+        return EXIT_CLAUDE
+    except WorkflowPreconditionError as e:
+        print(f"\n❌ {e}", file=sys.stderr)
+        return EXIT_ERROR
     except Exception as e:
         print(f"\n❌ Erreur fatale durant le workflow : {e}", file=sys.stderr)
-        sys.exit(1)
+        return EXIT_ERROR
 
     print("\n" + "=" * 70)
     if report.is_success:
@@ -249,6 +289,14 @@ def main():
     print(f"• Développeur       : {report.dev_specialty.value if report.dev_specialty else 'N/A'}")
     print(f"• Cycles exécutés  : {report.iterations_count}")
     print(f"• Total étapes     : {len(report.history)}")
+    if report.jev_mode == "mock":
+        print("• Jev              : SIMULATION (validations non fiables)")
+    if report.decisions:
+        print(f"• Décisions Jev    : {len(report.decisions)}")
+        for d in report.decisions:
+            value = f" ({d['value']:.2f})" if isinstance(d.get("value"), (int, float)) else ""
+            mark = {True: "✅", False: "❌"}.get(d["result"], "•") if d["kind"] == "noul" else "•"
+            print(f"    {mark} {d['step']}: {d['result']}{value}")
 
     if report.is_in_repo:
         print(f"• Dépôt cible      : {report.project_dir}")
@@ -296,8 +344,9 @@ def main():
         print(f"\n📂 Fichiers persistés dans le dossier : {Path(args.workspace).resolve()}")
 
     print("=" * 70 + "\n")
+    return EXIT_OK if report.is_success else EXIT_INCOMPLETE
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
 
