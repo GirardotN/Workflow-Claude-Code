@@ -90,7 +90,7 @@ Vous avez modifié manuellement des fichiers sur votre copie de travail pendant 
 #### Symptôme
 ```text
 Circuit breaker : Nombre maximum d'itérations (4) atteint.
-Arrêt forcé à l'étape 'CHECK_QUALITE' pour prévenir une consommation incontrôlée.
+Arrêt forcé avant un nouveau cycle de développement pour prévenir une consommation incontrôlée.
 ```
 
 #### Cause

@@ -18,8 +18,8 @@ Si le développeur avait des modifications en cours non enregistrées sur son ar
    ```bash
    git stash push -u -m "workflow-auto-stash-<timestamp>"
    ```
-3. **Garantie par Bloc `finally:` :**  
-   L'ensemble du cycle de vie de la FSM est encapsulé dans un bloc `try: ... finally:`. Même en cas d'exception non gérée, de crash réseau, d'erreur de sous-processus ou d'interruption manuelle par l'utilisateur (`SIGINT` / `Ctrl+C`), le bloc `finally` s'exécute inconditionnellement :
+3. **Garantie par gestionnaire de contexte (`IsolatedRun`, `isolation.py`) :**  
+   L'ensemble du cycle de vie de la FSM s'exécute dans `with IsolatedRun(...)`, dont `__exit__` joue le rôle d'un bloc `finally:`. Même en cas d'exception non gérée, de crash réseau, d'erreur de sous-processus ou d'interruption manuelle par l'utilisateur (`SIGINT` / `Ctrl+C`), le bloc `finally` s'exécute inconditionnellement :
    ```python
    finally:
        if stashed and self.git:

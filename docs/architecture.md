@@ -121,7 +121,7 @@ sequenceDiagram
             FSM->>Jev: Validation déterministe (validate)
             alt Rejet Jev
                 Jev-->>FSM: Rejet binaire
-                FSM->>SG: git rollback (git restore . + git clean -fd)
+                FSM->>SG: git rollback (git reset --hard HEAD + git clean -fd)
                 Note over FSM,WT: Code défaillant supprimé sans risque
             else Validation Jev
                 Jev-->>FSM: Accord de conformité
@@ -129,10 +129,11 @@ sequenceDiagram
         end
     end
 
-    FSM->>SG: git commit -m "feat(scope): ..."
-    FSM->>Dev: Invite interactive de fusion (git merge)
+    FSM->>SG: git commit sur la branche workflow/ai-* (systématique)
+    FSM->>Dev: Décision de fusion (--merge, invite interactive ou refus)
+    FSM->>SG: Retour sur la branche d'origine (+ git merge --no-ff si accepté)
 
-    Note over FSM,WT: Bloc inconditionnel finally:
+    Note over FSM,WT: Sortie garantie (succès, échec, exception, Ctrl-C) par IsolatedRun :<br/>rollback si non validé, retour sur la branche d'origine, PUIS stash pop
     opt Stash initialement créé
         FSM->>SG: git stash pop
         SG->>WT: Restauration des fichiers modifiés de l'utilisateur

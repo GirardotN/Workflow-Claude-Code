@@ -34,7 +34,7 @@ usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT
 | `prompt` | `string` | *(Prompt démo)* | Demande exprimée en langage naturel décrivant la tâche de refactoring ou de développement. |
 | `--project-dir` | `path` | `None` (auto `.`) | Répertoire du projet cible. Active automatiquement le mode **In-Repo** si le dossier est un dépôt Git valide. |
 | `--standalone` | `flag` | `False` | Force la génération d'un fichier source unique et autonome dans `./output` sans altérer le projet hôte. |
-| `--commit` | `flag` | `False` | Crée automatiquement le commit Git conventionnel une fois les modifications validées par l'audit. |
+| `--commit` | `flag` | `False` | Avec `--no-branch` : crée le commit conventionnel sur la branche active. **Sans effet avec l'isolation par branche** (défaut), où le succès est toujours committé sur `workflow/ai-*`. |
 | `--branch` | `flag` | `True` | Isole le travail sur une branche dédiée `workflow/ai-<timestamp>` pour préserver la branche active. |
 | `--no-branch` | `flag` | — | Désactive la création de branche d'isolation et applique les changements directement sur la branche active. |
 | `--merge` | `flag` | `False` | Fusionne automatiquement la branche d'isolation dans la branche source en fin de cycle validé. |

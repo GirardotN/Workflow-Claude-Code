@@ -73,7 +73,7 @@ workflow --project-dir /srv/workspace/microservice \
 ```
 
 ### Options Clés pour l'Automatisation
-- `--commit` : Crée automatiquement le commit Git conventionnel dès que la solution est validée.
+- `--commit` : (avec `--no-branch` uniquement) crée le commit conventionnel sur la branche active. Avec l'isolation par branche, le commit est toujours créé sur `workflow/ai-*`.
 - `--merge` : Fusionne immédiatement la branche d'isolation `workflow/ai-*` dans la branche active.
 - `-y` (`--yes`) : Répond oui à toutes les invites de confirmation interactives.
 - `--run-tests` : Bloque le merge si la suite de tests n'est pas strictement verte.
