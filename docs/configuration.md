@@ -65,7 +65,6 @@ Copiez le fichier [.env.example](../.env.example) vers `.env` dans le **réperto
 | `ALLOW_BASH` | `0` ou `1` | `0` | Autoriser ou interdire l'outil Bash pour l'agent de dev. |
 | `USE_BRANCH` | `0` ou `1` | `1` | Isoler le travail sur une branche dédiée `workflow/ai-*`. |
 | `RUN_TESTS` | `0` ou `1` | `1` | Exécuter la suite de tests du projet hôte comme oracle. |
-| `ALLOW_DIRTY` | `0` ou `1` | `0` | Autoriser l'exécution sans déclencher Stash Guard si la copie de travail a des modifications locales. |
 | `MOCK_SERVICES` | `0` ou `1` | `0` | Forcer le mode simulation globale par défaut. |
 
 ---
@@ -78,7 +77,6 @@ Pour définir des préférences qui s'appliquent à tous vos dépôts sans dupli
 {
   "allow_bash": false,
   "run_tests": true,
-  "use_branch": true,
-  "allow_dirty": false
+  "use_branch": true
 }
 ```

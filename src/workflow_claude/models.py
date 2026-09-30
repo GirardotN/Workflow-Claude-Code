@@ -85,4 +85,6 @@ class WorkflowExecutionReport:
     tests_passed: Optional[bool] = None
     tests_output: str = ""
     baseline_tests_passed: Optional[bool] = None
+    merged: bool = False                          # branche d'isolation fusionnée dans la branche d'origine
+    stash_restored: Optional[bool] = None         # None = aucun stash créé ; False = conflit (stash conservé)
 

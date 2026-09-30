@@ -80,6 +80,7 @@ class TestInRepoWorkflow(unittest.TestCase):
             jev_client=jev,
             project_dir=str(self.repo_path),
             standalone_mode=False,
+            use_branch=False,  # édition directe dans la copie de travail (la branche est testée ailleurs)
             auto_commit=False,
         )
 
@@ -116,6 +117,7 @@ class TestInRepoWorkflow(unittest.TestCase):
             claude_client=claude,
             jev_client=jev,
             project_dir=str(self.repo_path),
+            use_branch=False,
             auto_commit=True,
         )
 
@@ -131,6 +133,33 @@ class TestInRepoWorkflow(unittest.TestCase):
         # Vérifier que le dernier commit dans git log correspond
         head_commit = self.git.get_head_commit()
         self.assertEqual(report.commit_hash, head_commit)
+
+    def test_in_repo_branch_always_commits_and_returns_to_origin(self):
+        """
+        Avec l'isolation par branche, le succès est TOUJOURS committé sur workflow/ai-*
+        (sans --commit) et l'utilisateur est ramené sur sa branche d'origine, arbre propre.
+        """
+        initial_branch = self.git.get_current_branch()
+        initial_head = self.git.get_head_commit()
+
+        orchestrator = MultiAgentOrchestrator(
+            claude_client=ClaudeCliClient(mock_mode=True),
+            jev_client=JevClient(mock_mode=True),
+            project_dir=str(self.repo_path),
+            use_branch=True,
+            auto_commit=False,
+        )
+        report = orchestrator.run("Modifie la fonction de tri dans l'onglet x")
+
+        self.assertTrue(report.is_success)
+        self.assertEqual(self.git.get_current_branch(), initial_branch)
+        self.assertEqual(self.git.get_head_commit(), initial_head)  # la branche d'origine n'a pas bougé
+        self.assertTrue(self.git.is_working_tree_clean())
+
+        self.assertIsNotNone(report.commit_hash)
+        self.assertTrue(report.branch_name.startswith("workflow/ai-"))
+        self.assertEqual(self.git.count_commits_ahead(initial_head, report.branch_name), 1)
+        self.assertFalse(report.merged)
 
     def test_in_repo_rollback_on_rejection(self):
         """
