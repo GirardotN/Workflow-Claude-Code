@@ -14,6 +14,7 @@ from .config import (
     ALLOW_API_KEY,
     CLAUDE_BIN_PATH,
     DEFAULT_ALLOW_BASH,
+    DEFAULT_DOC_EDIT,
     DEFAULT_RUN_TESTS,
     DEFAULT_USE_BRANCH,
     JEV_SEND,
@@ -178,6 +179,13 @@ def main(argv=None) -> int:
              "Par défaut ces variables sont retirées pour n'utiliser que l'abonnement.",
     )
     parser.add_argument(
+        "--doc-edit",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_DOC_EDIT,
+        help="Mode In-Repo : un agent met à jour la documentation existante du projet (README, CHANGELOG, docs/) dans "
+             "le même commit ; toute modification hors documentation est annulée (défaut: activé, --no-doc-edit pour le couper)",
+    )
+    parser.add_argument(
         "--jev-send",
         choices=["full", "review-only"],
         default=JEV_SEND if JEV_SEND in ("full", "review-only") else "full",
@@ -220,6 +228,7 @@ def main(argv=None) -> int:
         else:
             print("• Auto-commit Git  : Activé (--commit)")
     print(f"• Isolation branche: {'Activée (--branch)' if args.branch else 'Désactivée (--no-branch)'}")
+    print(f"• Doc du projet    : {'mise à jour par un agent (hors code, garde-fou)' if args.doc_edit else 'désactivée (--no-doc-edit)'}")
     print(f"• Tests auto       : {'Activés (--run-tests)' if args.run_tests else 'Désactivés (--no-tests)'}")
     print(f"• Outil Bash       : {'Autorisé (--allow-bash)' if args.allow_bash else 'Désactivé (mode sandbox sécurisé)'}")
     print(f"• Claude CLI path  : {CLAUDE_BIN_PATH}")
@@ -259,6 +268,7 @@ def main(argv=None) -> int:
         on_step_callback=print_step,
         on_merge_decision=lambda rep: ask_merge(rep, assume_yes=args.yes),
         jev_send=args.jev_send,
+        doc_edit=args.doc_edit,
     )
 
     try:

@@ -10,16 +10,19 @@ décisions Jev masquées et tracées, tests du projet, persistance) et gère le 
 import logging
 import shutil
 import tempfile
+import time
 from pathlib import Path
 from typing import Callable, List, Optional
 
-from .clients.claude_cli import ClaudeCliClient, ClaudeResult
+from . import doc_guard, prompts
+from .clients.claude_cli import ClaudeCliClient, ClaudeCliError, ClaudeResult
 from .clients.git_client import GitClient, GitClientError
 from .clients.jev_client import JevClient
 from .clients.test_runner import TestResult, TestRunner
 from .commit_message import extract_commit_message
 from .config import (
     DEFAULT_ALLOW_BASH,
+    DEFAULT_DOC_EDIT,
     DEFAULT_RUN_TESTS,
     DEFAULT_USE_BRANCH,
     JEV_MAX_STATE_CHARS,
@@ -31,10 +34,12 @@ from .fsm import InRepoBackend, StandaloneBackend, WorkflowEngine, WorkflowMaxRe
 from .isolation import IsolatedRun, WorkflowPreconditionError
 from .jev_context import build_validation_context, parse_verdict, prepare_context
 from .models import DevSpecialty, StepRecord, WorkflowExecutionReport
+from .policy import ModelPolicy
 from .prompts import COMPLEXITY_DESCRIPTIONS, SPECIALTY_DESCRIPTIONS, VERDICT_INSTRUCTION
 from .roles import Role
 from .text_utils import clean_code_output, normalize_test_output
 from .tool_policy import policy_for
+from .ui.terminal import Spinner
 
 __all__ = [
     "COMPLEXITY_DESCRIPTIONS",
@@ -92,6 +97,7 @@ class MultiAgentOrchestrator:
         jev_send: str = JEV_SEND,
         jev_max_chars: int = JEV_MAX_STATE_CHARS,
         max_prompt_chars: int = MAX_DIFF_CHARS,
+        doc_edit: bool = DEFAULT_DOC_EDIT,
     ):
         self.claude = claude_client or ClaudeCliClient()
         self.jev = jev_client or JevClient()
@@ -116,6 +122,7 @@ class MultiAgentOrchestrator:
         self.jev_send = jev_send
         self.jev_max_chars = jev_max_chars
         self.max_prompt_chars = max_prompt_chars
+        self.doc_edit = doc_edit
 
     # ------------------------------------------------------------------
     # Point d'entrée
@@ -249,6 +256,12 @@ class MultiAgentOrchestrator:
             return
 
         # -------------------------------------------------------------------------
+        # DOCUMENTATION DU PROJET : l'agent doc met à jour la doc existante (hors code), sous garde-fou
+        # -------------------------------------------------------------------------
+        if self.doc_edit and guard.has_changes():
+            self._doc_edit_step(report)
+
+        # -------------------------------------------------------------------------
         # COMMIT : systématique sur la branche d'isolation (sans risque pour la branche de
         # l'utilisateur) ; sans branche, uniquement si --commit est demandé.
         # -------------------------------------------------------------------------
@@ -292,6 +305,42 @@ class MultiAgentOrchestrator:
 
         report.is_success = True
         logger.info(f"Workflow In-Repo complété avec succès en {report.iterations_count} itération(s) !")
+
+    def _doc_edit_step(self, report: WorkflowExecutionReport) -> None:
+        """
+        Étape DOC_EDIT : un agent avec outils d'édition met à jour la documentation du projet ; `doc_guard`
+        annule ensuite toute modification hors fichiers de documentation (le code validé reste intact).
+        Étape « au mieux » : une erreur de Claude ici ne remet jamais en cause le code déjà validé.
+        """
+        model = ModelPolicy.for_type(report.workflow_type).doc
+        prompt = prompts.doc_edit(report.git_diff, report.doc_et_commit, self.max_prompt_chars)
+        snapshot = doc_guard.snapshot(self.git)
+
+        logger.info(f">>> Mise à jour de la documentation du projet (Modèle: {model})")
+        t0 = time.perf_counter()
+        output = ""
+        try:
+            with Spinner(f"Mise à jour de la documentation du projet ({model})..."):
+                output = self._call_claude(Role.DOC_EDIT, prompt, model, cwd=str(self.project_dir))
+        except ClaudeCliError as e:
+            logger.warning(f"Mise à jour de la documentation abandonnée ({e}) : le code validé est conservé.")
+            output = f"[abandonnée] {e}"
+        duration = time.perf_counter() - t0
+
+        result = doc_guard.enforce(self.git, snapshot)  # toujours : l'agent a pu écrire avant d'échouer
+        report.doc_files_kept = result.kept
+        report.doc_files_reverted = result.reverted
+        report.doc_diff = self.git.get_diff(paths=result.kept) if result.kept else ""
+        report.modified_files = sorted(set(report.modified_files) | set(result.kept))
+
+        summary = (
+            f"Fichiers de documentation mis à jour : {', '.join(result.kept) or 'aucun'}\n"
+            f"Modifications hors documentation annulées : {', '.join(result.reverted) or 'aucune'}\n\n{output}"
+        )
+        self._record_step(
+            report, "DOC_EDIT", model, prompt, summary, duration,
+            metadata={"kept": result.kept, "reverted": result.reverted},
+        )
 
     # ------------------------------------------------------------------
     # Mode Standalone
@@ -468,6 +517,10 @@ class MultiAgentOrchestrator:
                 code_file.write_text(cleaned_code, encoding="utf-8")
                 logger.info(f"Code produit sauvegardé dans : {code_file}")
 
+            # 1 bis. Diff de la seule documentation mise à jour dans le projet (séparé du patch de code)
+            if report.doc_diff:
+                (ws_path / "DOC_CHANGES.diff").write_text(report.doc_diff, encoding="utf-8")
+
             # 2. Sauvegarde de la documentation
             doc_file = ws_path / "GENERATED_DOC.md"
             doc_file.write_text(report.doc_et_commit, encoding="utf-8")
@@ -490,6 +543,10 @@ class MultiAgentOrchestrator:
             if report.is_in_repo:
                 lines.append(f"- **Dépôt cible :** {report.project_dir}")
                 lines.append(f"- **Fichiers modifiés :** {', '.join(report.modified_files) if report.modified_files else 'Aucun'}")
+                if report.doc_files_kept:
+                    lines.append(f"- **Documentation mise à jour :** {', '.join(report.doc_files_kept)}")
+                if report.doc_files_reverted:
+                    lines.append(f"- **Modifications hors documentation annulées :** {', '.join(report.doc_files_reverted)}")
                 if report.commit_hash:
                     lines.append(f"- **Commit Git créé :** `{report.commit_hash}`")
             lines.extend(["", "## Historique des étapes :"])

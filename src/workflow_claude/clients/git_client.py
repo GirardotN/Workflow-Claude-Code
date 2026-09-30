@@ -145,17 +145,17 @@ class GitClient:
         except Exception:
             return "HEAD"
 
-    def get_diff(self) -> str:
+    def get_diff(self, paths: Optional[List[str]] = None) -> str:
         """
         Récupère l'intégralité du git diff (modifications indexées, non indexées
-        et nouveaux fichiers créés) par rapport à HEAD.
+        et nouveaux fichiers créés) par rapport à HEAD, éventuellement limité à `paths`.
         """
         try:
             # 1. Indexe les fichiers non suivis avec intent-to-add afin qu'ils apparaissent dans git diff
             self._run_git(["add", "-N", "."], check=False)
 
             # 2. Diff complet par rapport à HEAD si des commits existent
-            diff = self._run_git(["diff", "HEAD"], check=False)
+            diff = self._run_git(["diff", "HEAD"] + (["--"] + paths if paths else []), check=False)
             if diff:
                 return diff
             # 3. Si HEAD n'existe pas encore (dépôt vide), diff classique
@@ -181,9 +181,9 @@ class GitClient:
             logger.warning(f"Impossible de récupérer le git diff : {e}")
             return "", []
 
-    def get_modified_files(self) -> List[str]:
+    def status_entries(self) -> List[Tuple[str, str]]:
         """
-        Retourne la liste des chemins de fichiers modifiés ou ajoutés.
+        Retourne (code de statut, chemin) pour chaque fichier modifié, ajouté ou supprimé.
         Utilise le format porcelain -z : robuste aux espaces, guillemets et renommages.
         """
         try:
@@ -192,7 +192,7 @@ class GitClient:
             if proc.returncode != 0:
                 return []
             tokens = proc.stdout.split("\0")
-            files: List[str] = []
+            entries: List[Tuple[str, str]] = []
             i = 0
             while i < len(tokens):
                 entry = tokens[i]
@@ -202,10 +202,18 @@ class GitClient:
                 status, path = entry[:2], entry[3:]
                 if "R" in status or "C" in status:
                     i += 1  # le token suivant est l'ancien chemin
-                files.append(path)
-            return files
+                entries.append((status, path))
+            return entries
         except Exception:
             return []
+
+    def get_modified_files(self) -> List[str]:
+        """Retourne la liste des chemins de fichiers modifiés ou ajoutés."""
+        return [path for _status, path in self.status_entries()]
+
+    def restore_from_head(self, path: str) -> None:
+        """Restaure un fichier suivi dans l'état de HEAD (index et copie de travail)."""
+        self._run_git(["checkout", "HEAD", "--", path], check=False)
 
     def untracked_files(self) -> List[str]:
         """Liste les fichiers non suivis et non ignorés (chemins relatifs à la racine du dépôt)."""

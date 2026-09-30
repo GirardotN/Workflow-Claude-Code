@@ -182,6 +182,7 @@ _user_cfg = load_user_config()
 # Sécurité & Isolation par défaut (config.json > variable d'environnement > valeur par défaut)
 DEFAULT_ALLOW_BASH = _coerce_bool(_user_cfg.get("allow_bash"), env_bool("ALLOW_BASH", False))
 DEFAULT_RUN_TESTS = _coerce_bool(_user_cfg.get("run_tests"), env_bool("RUN_TESTS", True))
+DEFAULT_DOC_EDIT = _coerce_bool(_user_cfg.get("doc_edit"), env_bool("DOC_EDIT", True))
 DEFAULT_USE_BRANCH = _coerce_bool(_user_cfg.get("use_branch"), env_bool("USE_BRANCH", True))
 
 

@@ -64,7 +64,9 @@ class TestSameStateMachineForBothModes(unittest.TestCase):
                 standalone, in_repo = self.run_both(complexity.value)
                 self.assertEqual(standalone.workflow_type, in_repo.workflow_type)
                 # même enchaînement de modèles, étape par étape (les noms diffèrent, pas la logique)
-                self.assertEqual([s.model for s in standalone.history], [s.model for s in in_repo.history])
+                # (DOC_EDIT est propre au mode In-Repo : édition de la documentation du projet)
+                in_repo_models = [s.model for s in in_repo.history if s.step_name != "DOC_EDIT"]
+                self.assertEqual([s.model for s in standalone.history], in_repo_models)
                 security = [n for n in step_names(in_repo) if "SECU" in n]
                 self.assertEqual(bool(security), complexity is not WorkflowType.SIMPLE)
 
@@ -73,7 +75,7 @@ class TestSameStateMachineForBothModes(unittest.TestCase):
         self.assertEqual(step_names(standalone), [
             "1_GENERATION_SPEC", "DEV_CYCLE_1", "CHECK_QUALITE_CYCLE_1", "CHECK_SECU_CYCLE_1", "FINAL_DOC_ET_COMMIT"])
         self.assertEqual(step_names(in_repo), [
-            "1_EXPLORATION_ET_SPEC", "DEV_IN_SITU_CYCLE_1", "CHECK_QUALITE_DIFF_CYCLE_1", "CHECK_SECU_DIFF_CYCLE_1", "FINAL_DOC_ET_COMMIT"])
+            "1_EXPLORATION_ET_SPEC", "DEV_IN_SITU_CYCLE_1", "CHECK_QUALITE_DIFF_CYCLE_1", "CHECK_SECU_DIFF_CYCLE_1", "FINAL_DOC_ET_COMMIT", "DOC_EDIT"])
 
     def test_backends_declare_their_mode(self):
         orchestrator = MultiAgentOrchestrator(claude_client=ClaudeCliClient(mock_mode=True), jev_client=ModerateJev("x"))
