@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 from .clients.claude_cli import ClaudeCliClient
-from .clients.git_client import GitClient
 from .clients.jev_client import JevClient
 from .config import (
     CLAUDE_BIN_PATH,
@@ -59,6 +58,19 @@ def print_step(step: StepRecord):
             icon = v
             break
     print(f"  {icon} [{step.step_name}] Modèle: {step.model} ({step.duration_seconds:.2f}s)")
+
+
+def ask_merge(report, assume_yes: bool = False) -> bool:
+    """
+    Décision de fusion, appelée par l'orchestrateur une fois les modifications validées et
+    committées sur la branche d'isolation (avant le retour sur la branche d'origine).
+    """
+    print("\n" + "-" * 70)
+    print(f"🌿 Modifications validées et committées [{report.commit_hash}] sur la branche '{report.branch_name}'.")
+    question = f"Voulez-vous fusionner '{report.branch_name}' dans '{report.original_branch}' ?"
+    merge = assume_yes or confirm_action(question, default=True)
+    print("-" * 70)
+    return merge
 
 
 def main():
@@ -163,7 +175,10 @@ def main():
     print(f"• Mode simulation  : {'OUI (--mock)' if args.mock else 'NON (Claude CLI + TypeSafe API)'}")
     print(f"• Mode de travail  : {'Standalone forcé (--standalone)' if args.standalone else ('In-Repo: ' + args.project_dir if args.project_dir else 'Auto (In-Repo si dépôt Git)')}")
     if args.commit:
-        print("• Auto-commit Git  : Activé (--commit)")
+        if args.branch:
+            print("• Auto-commit Git  : --commit sans effet avec l'isolation par branche (commit systématique sur workflow/ai-*)")
+        else:
+            print("• Auto-commit Git  : Activé (--commit)")
     print(f"• Isolation branche: {'Activée (--branch)' if args.branch else 'Désactivée (--no-branch)'}")
     print(f"• Tests auto       : {'Activés (--run-tests)' if args.run_tests else 'Désactivés (--no-tests)'}")
     print(f"• Outil Bash       : {'Autorisé (--allow-bash)' if args.allow_bash else 'Désactivé (mode sandbox sécurisé)'}")
@@ -189,6 +204,7 @@ def main():
         allow_bash=args.allow_bash,
         run_tests=args.run_tests,
         on_step_callback=print_step,
+        on_merge_decision=lambda rep: ask_merge(rep, assume_yes=args.yes),
     )
 
     try:
@@ -226,31 +242,23 @@ def main():
             diff_display = report.git_diff[:2500] + ("\n... [tronqué pour affichage]" if len(report.git_diff) > 2500 else "")
             print(format_colored_diff(diff_display))
 
-        # Proposition de merge interactif si on est resté sur la branche isolée
-        if (
-            report.is_success
-            and report.branch_name
-            and report.original_branch
-            and report.branch_name != report.original_branch
-            and not args.merge
-        ):
+        # Bilan de l'isolation Git : l'orchestrateur est déjà revenu sur la branche d'origine
+        # et a restauré le stash ; il ne reste qu'à informer l'utilisateur.
+        if report.is_success and report.merged:
+            print(f"\n✅ Fusion réussie dans '{report.original_branch}' (vous êtes de retour sur cette branche).")
+        elif report.is_success and report.branch_name and report.branch_name != report.original_branch:
             print("\n" + "-" * 70)
-            print(f"🌿 Les modifications ont été appliquées et validées sur la branche '{report.branch_name}'.")
-            if args.yes or confirm_action(f"Voulez-vous fusionner '{report.branch_name}' dans '{report.original_branch}' ?", default=True):
-                git_c = GitClient(report.project_dir)
-                git_c.checkout_branch(report.original_branch)
-                if git_c.merge_branch(report.branch_name):
-                    git_c.delete_branch(report.branch_name)
-                    print(f"✅ Fusion réussie ! Vous êtes de retour sur '{report.original_branch}'.")
-                else:
-                    print(f"⚠️ Échec du merge automatique. Vous pouvez inspecter la branche : git checkout {report.branch_name}")
+            print(f"ℹ️ Les modifications validées sont sur la branche '{report.branch_name}' (vous êtes de retour sur '{report.original_branch}').")
+            if report.original_branch and report.original_branch != "HEAD":
+                print(f"  Pour les intégrer : git merge {report.branch_name}")
             else:
-                print(f"ℹ️ Branche '{report.branch_name}' conservée. Pour la fusionner manuellement :\n  git checkout {report.original_branch}\n  git merge {report.branch_name}")
-                if confirm_action(f"Souhaitez-vous revenir sur votre branche d'origine '{report.original_branch}' ?", default=True):
-                    git_c = GitClient(report.project_dir)
-                    git_c.checkout_branch(report.original_branch)
-                    print(f"✅ Vous êtes de retour sur '{report.original_branch}'.")
+                print(f"  Pour les intégrer : git merge {report.branch_name} (depuis la branche de votre choix)")
             print("-" * 70)
+        if report.stash_restored is False:
+            print(
+                "\n⚠️ Vos modifications locales mises en réserve n'ont pas pu être restaurées automatiquement "
+                "(conflit). Elles sont conservées : git stash list, puis git stash pop."
+            )
 
     else:
         print("\n--- CODE PRODUIT ---")
