@@ -10,10 +10,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from clients.claude_cli import ClaudeCliClient
-from clients.git_client import GitClient
-from clients.jev_client import JevClient
-from orchestrator import MultiAgentOrchestrator
+from workflow_claude.clients.claude_cli import ClaudeCliClient
+from workflow_claude.clients.git_client import GitClient
+from workflow_claude.clients.jev_client import JevClient
+from workflow_claude.orchestrator import MultiAgentOrchestrator
 
 
 class TestInRepoWorkflow(unittest.TestCase):
@@ -212,7 +212,7 @@ class TestInRepoWorkflow(unittest.TestCase):
         claude = ClaudeCliClient(mock_mode=True)
         jev = JevClient(mock_mode=True)
 
-        from clients.test_runner import TestResult, TestRunner
+        from workflow_claude.clients.test_runner import TestResult, TestRunner
 
         class MockFailingThenPassingTestRunner(TestRunner):
             def __init__(self):
@@ -321,7 +321,7 @@ class TestInRepoWorkflow(unittest.TestCase):
         claude = ClaudeCliClient(mock_mode=True)
         jev = JevClient(mock_mode=True)
 
-        from clients.test_runner import TestResult, TestRunner
+        from workflow_claude.clients.test_runner import TestResult, TestRunner
 
         class ConstantFailingTestRunner(TestRunner):
             def run_tests(self, project_dir, custom_cmd=None):
@@ -355,7 +355,7 @@ class TestInRepoWorkflow(unittest.TestCase):
         claude = ClaudeCliClient(mock_mode=True)
         jev = JevClient(mock_mode=True)
 
-        from clients.test_runner import TestResult, TestRunner
+        from workflow_claude.clients.test_runner import TestResult, TestRunner
 
         class JitterFailingTestRunner(TestRunner):
             def __init__(self):

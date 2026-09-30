@@ -85,7 +85,7 @@ Lorsque Claude retourne un format JSON structuré (`--output-format json`), le c
 Les expressions régulières non-gloutonnes classiques (`re.search(r"\{.*?\}")`) s'arrêtent à la toute première accolade fermante interne, corrompant irrémédiablement le payload JSON.
 
 ### L'Automate d'États Lexical
-`clients/claude_cli.py` implémente un analyseur lexical à profondeur variable qui gère l'état des chaînes de caractères et les caractères d'échappement :
+`src/workflow_claude/clients/claude_cli.py` implémente un analyseur lexical à profondeur variable qui gère l'état des chaînes de caractères et les caractères d'échappement :
 
 ```python
 start_idx = raw_stdout.find("{")

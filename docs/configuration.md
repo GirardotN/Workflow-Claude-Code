@@ -10,13 +10,15 @@ L'orchestrateur applique un ordre de précédence strict :
 ```text
 Ligne de Commande (CLI)
   └──> Préférences Utilisateur (~/.config/workflow-claude/config.json)
-         └──> Variables d'Environnement (.env)
-                └──> Valeurs par Défaut du Code
+         └──> Variables d'Environnement du processus
+                └──> Fichier .env du répertoire courant
+                       └──> Fichier ~/.config/workflow-claude/.env
+                              └──> Valeurs par Défaut du Code
 ```
 
 ---
 
-## Options de la Ligne de Commande (`cli.py`)
+## Options de la Ligne de Commande (`src/workflow_claude/cli.py`)
 
 ```text
 usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT_DIR]
@@ -49,7 +51,7 @@ usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT
 
 ## Variables d'Environnement (`.env`)
 
-Copiez le fichier [.env.example](../.env.example) vers `.env` à la racine de votre installation :
+Copiez le fichier [.env.example](../.env.example) vers `.env` dans le **répertoire depuis lequel vous lancez `workflow`**, ou vers `~/.config/workflow-claude/.env` pour une configuration globale. Une variable déjà définie dans l'environnement du processus n'est jamais écrasée par un fichier `.env` :
 
 | Variable | Type | Valeur par défaut | Rôle & Description |
 | :--- | :--- | :--- | :--- |

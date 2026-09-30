@@ -6,10 +6,10 @@ les modèles assignés, l'isolation des contextes et les boucles de feedback.
 
 import unittest
 
-from clients.claude_cli import ClaudeCliClient
-from clients.jev_client import JevClient
-from models import DevSpecialty, WorkflowType
-from orchestrator import (
+from workflow_claude.clients.claude_cli import ClaudeCliClient
+from workflow_claude.clients.jev_client import JevClient
+from workflow_claude.models import DevSpecialty, WorkflowType
+from workflow_claude.orchestrator import (
     MultiAgentOrchestrator,
     WorkflowMaxRetriesExceeded,
     clean_code_output,

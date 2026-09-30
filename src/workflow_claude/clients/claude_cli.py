@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from config import CLAUDE_BIN_PATH, CLAUDE_TIMEOUT_SECONDS, MOCK_SERVICES
+from ..config import CLAUDE_BIN_PATH, CLAUDE_TIMEOUT_SECONDS, MOCK_SERVICES
 
 logger = logging.getLogger("claude_cli")
 

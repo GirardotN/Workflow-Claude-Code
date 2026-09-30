@@ -10,11 +10,11 @@ import time
 from pathlib import Path
 from typing import Callable, Optional, Tuple
 
-from clients.claude_cli import ClaudeCliClient
-from clients.git_client import GitClient
-from clients.jev_client import JevClient
-from clients.test_runner import TestRunner
-from config import (
+from .clients.claude_cli import ClaudeCliClient
+from .clients.git_client import GitClient
+from .clients.jev_client import JevClient
+from .clients.test_runner import TestRunner
+from .config import (
     DEFAULT_ALLOW_BASH,
     DEFAULT_ALLOW_DIRTY,
     DEFAULT_RUN_TESTS,
@@ -24,13 +24,13 @@ from config import (
     MODEL_OPUS,
     MODEL_SONNET,
 )
-from models import (
+from .models import (
     DevSpecialty,
     StepRecord,
     WorkflowExecutionReport,
     WorkflowType,
 )
-from ui.terminal import Spinner
+from .ui.terminal import Spinner
 
 logger = logging.getLogger("orchestrator")
 

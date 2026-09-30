@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from clients.test_runner import TestRunner
+from workflow_claude.clients.test_runner import TestRunner
 
 
 class TestTestRunner(unittest.TestCase):

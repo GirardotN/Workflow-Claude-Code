@@ -7,9 +7,10 @@ schéma direct (/v1/decide), avec gestion d'erreurs et mode simulation/mock.
 import logging
 import re
 from typing import List
+
 import requests
 
-from config import (
+from ..config import (
     MOCK_SERVICES,
     TYPESAFE_API_KEY,
     TYPESAFE_API_URL,

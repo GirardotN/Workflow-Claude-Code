@@ -113,8 +113,10 @@ Pour explorer tous les détails architecturaux, les guides avancés et la réfé
 
 Le projet intègre une suite de **27 tests unitaires hermétiques** (100 % de succès) validant chaque composant sans dépendance externe :
 ```bash
-python3 -m unittest discover -s tests -v
+pip install -e ".[dev]"   # installation éditable requise (le code vit dans src/workflow_claude)
+python -m unittest discover -s tests -v
 ```
+Voir [CONTRIBUTING.md](CONTRIBUTING.md) pour l'environnement de développement.
 
 ### Matrice CI/CD GitHub Actions (`.github/workflows/ci.yml`)
 Chaque commit et pull request est testé sur une matrice **9 environnements** :

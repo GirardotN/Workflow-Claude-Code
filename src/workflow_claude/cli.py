@@ -8,10 +8,10 @@ import logging
 import sys
 from pathlib import Path
 
-from clients.claude_cli import ClaudeCliClient
-from clients.git_client import GitClient
-from clients.jev_client import JevClient
-from config import (
+from .clients.claude_cli import ClaudeCliClient
+from .clients.git_client import GitClient
+from .clients.jev_client import JevClient
+from .config import (
     CLAUDE_BIN_PATH,
     DEFAULT_ALLOW_BASH,
     DEFAULT_RUN_TESTS,
@@ -20,10 +20,9 @@ from config import (
     MOCK_SERVICES,
     TYPESAFE_API_KEY,
 )
-from models import StepRecord
-from orchestrator import MultiAgentOrchestrator
-from ui.terminal import confirm_action, format_colored_diff
-
+from .models import StepRecord
+from .orchestrator import MultiAgentOrchestrator
+from .ui.terminal import confirm_action, format_colored_diff
 
 # Support de l'encodage UTF-8 sous Windows (cmd.exe / PowerShell)
 if sys.platform == "win32":

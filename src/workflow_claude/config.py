@@ -2,28 +2,77 @@
 Configuration globale pour l'orchestrateur multi-agents Claude & TypeSafe Jev.
 """
 
+import json
 import os
 import shutil
 from pathlib import Path
+from typing import Any, List
 
-# Chargement automatique des variables d'environnement (.env)
-_env_path = Path(__file__).resolve().parent / ".env"
-if _env_path.is_file():
+USER_CONFIG_DIR = Path.home() / ".config" / "workflow-claude"
+_TRUE_VALUES = ("1", "true", "yes", "on")
+_FALSE_VALUES = ("0", "false", "no", "off", "")
+
+
+def _load_env_file(env_path: Path) -> None:
+    """Charge un fichier .env sans écraser les variables déjà définies dans l'environnement."""
     try:
         from dotenv import load_dotenv
-        load_dotenv(_env_path)
+        load_dotenv(env_path, override=False)
+        return
     except ImportError:
-        try:
-            with open(_env_path, encoding="utf-8") as _f:
-                for _line in _f:
-                    _line = _line.strip()
-                    if _line and not _line.startswith("#") and "=" in _line:
-                        _k, _v = _line.split("=", 1)
-                        _k, _v = _k.strip(), _v.strip().strip("'\"")
-                        if _k and _k not in os.environ:
-                            os.environ[_k] = _v
-        except Exception:
-            pass
+        pass
+    try:
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    key, value = key.strip(), value.strip().strip("'\"")
+                    if key and key not in os.environ:
+                        os.environ[key] = value
+    except OSError:
+        pass
+
+
+def _env_search_paths() -> List[Path]:
+    """
+    Emplacements des fichiers .env, par priorité décroissante :
+    1. le répertoire courant (ce que l'utilisateur voit),
+    2. le répertoire de configuration utilisateur (~/.config/workflow-claude/.env).
+    Les variables déjà présentes dans l'environnement du processus restent prioritaires.
+    """
+    return [Path.cwd() / ".env", USER_CONFIG_DIR / ".env"]
+
+
+for _candidate in _env_search_paths():
+    if _candidate.is_file():
+        _load_env_file(_candidate)
+
+
+def env_bool(name: str, default: bool) -> bool:
+    """Lit une variable d'environnement booléenne (1/true/yes/on ↔ 0/false/no/off)."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in _TRUE_VALUES:
+        return True
+    if value in _FALSE_VALUES:
+        return False
+    return default
+
+
+def _coerce_bool(value: Any, default: bool) -> bool:
+    """Convertit une valeur de config.json en booléen strict (évite bool('false') == True)."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in _TRUE_VALUES:
+            return True
+        if lowered in _FALSE_VALUES:
+            return False
+    return default
 
 
 def _find_claude_binary() -> str:
@@ -89,35 +138,33 @@ TYPESAFE_TIMEOUT_SECONDS = float(os.getenv("TYPESAFE_TIMEOUT_SECONDS", "30.0"))
 MAX_RETRIES = int(os.getenv("MAX_WORKFLOW_RETRIES", "4"))
 
 # Mode simulation / mock si aucune clé ou si demandé
-MOCK_SERVICES = os.getenv("MOCK_SERVICES", "0").lower() in ("1", "true", "yes")
+MOCK_SERVICES = env_bool("MOCK_SERVICES", False)
 
 # Modèles Claude autorisés par la matrice de décision
 MODEL_SONNET = "sonnet"
 MODEL_OPUS = "opus"
 MODEL_HAIKU = "haiku"
 
-# Répertoire cible du projet à inspecter / modifier
-DEFAULT_PROJECT_DIR = os.getenv("PROJECT_DIR", ".")
-
 
 def load_user_config() -> dict:
     """Charge les préférences utilisateur depuis ~/.config/workflow-claude/config.json si présent."""
-    cfg_path = Path.home() / ".config" / "workflow-claude" / "config.json"
+    cfg_path = USER_CONFIG_DIR / "config.json"
     if cfg_path.is_file():
         try:
-            import json
-            return json.loads(cfg_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+            data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        if isinstance(data, dict):
+            return data
     return {}
 
 
 _user_cfg = load_user_config()
 
-# Sécurité & Isolation par défaut
-DEFAULT_ALLOW_BASH = bool(_user_cfg.get("allow_bash", os.getenv("ALLOW_BASH", "0").lower() in ("1", "true", "yes")))
-DEFAULT_RUN_TESTS = bool(_user_cfg.get("run_tests", os.getenv("RUN_TESTS", "1").lower() in ("1", "true", "yes")))
-DEFAULT_USE_BRANCH = bool(_user_cfg.get("use_branch", os.getenv("USE_BRANCH", "1").lower() in ("1", "true", "yes")))
-DEFAULT_ALLOW_DIRTY = bool(_user_cfg.get("allow_dirty", os.getenv("ALLOW_DIRTY", "0").lower() in ("1", "true", "yes")))
+# Sécurité & Isolation par défaut (config.json > variable d'environnement > valeur par défaut)
+DEFAULT_ALLOW_BASH = _coerce_bool(_user_cfg.get("allow_bash"), env_bool("ALLOW_BASH", False))
+DEFAULT_RUN_TESTS = _coerce_bool(_user_cfg.get("run_tests"), env_bool("RUN_TESTS", True))
+DEFAULT_USE_BRANCH = _coerce_bool(_user_cfg.get("use_branch"), env_bool("USE_BRANCH", True))
+DEFAULT_ALLOW_DIRTY = _coerce_bool(_user_cfg.get("allow_dirty"), env_bool("ALLOW_DIRTY", False))
 
 
