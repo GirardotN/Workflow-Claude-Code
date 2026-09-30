@@ -11,7 +11,7 @@ Contrats implicites (vérifiés par des tests) :
 from typing import Optional
 
 from .jev_context import truncate_middle
-from .models import DevSpecialty
+from .models import DevSpecialty, WorkflowType
 
 PROMPTS_VERSION = "2"
 
@@ -20,6 +20,19 @@ VERDICT_INSTRUCTION = (
     "\n\nTermine OBLIGATOIREMENT ta réponse par une dernière ligne exactement `VERDICT: PASS` "
     "(aucun défaut bloquant) ou `VERDICT: FAIL` (au moins un défaut bloquant)."
 )
+
+# Descriptions des options soumises à Jev (sinon il ne voit que les libellés)
+COMPLEXITY_DESCRIPTIONS = {
+    WorkflowType.SIMPLE.value: "Modification locale et peu risquée : un ou deux fichiers, sans changement d'architecture ni de sécurité.",
+    WorkflowType.MOYENNE.value: "Plusieurs fichiers, logique métier, API ou aspects de sécurité à soigner, sans refonte d'architecture.",
+    WorkflowType.COMPLEXE.value: "Refonte, nouvelle architecture ou changement transversal à fort risque (données, sécurité, concurrence).",
+}
+SPECIALTY_DESCRIPTIONS = {
+    DevSpecialty.CSHARP.value: "Code C# / .NET (fichiers .cs, .csproj).",
+    DevSpecialty.NODEJS.value: "Code JavaScript/TypeScript côté serveur ou outillage Node.js (package.json, npm).",
+    DevSpecialty.UI.value: "Interface utilisateur web : React, Vue, HTML, CSS, composants front-end.",
+    DevSpecialty.PYTHON.value: "Code Python (fichiers .py, pyproject, pytest, FastAPI, Django, Flask).",
+}
 
 # Consignes de spécialité ajoutées au prompt système de l'agent de développement (--append-system-prompt)
 SPECIALTY_SYSTEM_PROMPTS = {

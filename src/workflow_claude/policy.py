@@ -17,6 +17,9 @@ from dataclasses import dataclass
 from .config import MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
 from .models import WorkflowType
 
+# Modèle de l'étape de spécification (exécutée AVANT que Jev décide de la complexité)
+SPEC_MODEL = MODEL_SONNET
+
 
 @dataclass(frozen=True)
 class ModelPolicy:
@@ -36,7 +39,7 @@ class ModelPolicy:
         is_complexe = workflow_type == WorkflowType.COMPLEXE
         is_simple = workflow_type == WorkflowType.SIMPLE
         return cls(
-            spec=MODEL_SONNET,
+            spec=SPEC_MODEL,
             dev=MODEL_OPUS if is_complexe else MODEL_SONNET,
             quality=MODEL_OPUS if is_complexe else MODEL_SONNET,
             feedback_quality=MODEL_SONNET if is_complexe else MODEL_HAIKU,

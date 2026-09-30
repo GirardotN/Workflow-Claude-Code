@@ -16,6 +16,24 @@ from typing import List, Optional, Tuple
 
 logger = logging.getLogger("git_client")
 
+# Fichiers générés ou volumineux, sans intérêt pour une revue (exclus du diff relu par les agents)
+DEFAULT_DIFF_EXCLUDES = [
+    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "Cargo.lock",
+    "go.sum", "composer.lock", "Gemfile.lock", "*.min.js", "*.min.css", "*.map",
+    "dist/", "build/", "node_modules/", ".next/", "coverage/",
+]
+
+
+def diff_exclude_specs(patterns: List[str]) -> List[str]:
+    """Convertit des motifs (`nom`, `*.ext`, `dossier/`) en pathspecs git « exclude » valables à toute profondeur."""
+    specs = []
+    for pattern in patterns:
+        if pattern.endswith("/"):
+            specs.append(f":(exclude,glob)**/{pattern}**")
+        else:
+            specs.append(f":(exclude,glob)**/{pattern}")
+    return specs
+
 
 class GitClientError(RuntimeError):
     """Exception levée en cas d'échec d'une commande Git."""
@@ -145,6 +163,23 @@ class GitClient:
         except Exception as e:
             logger.warning(f"Impossible de récupérer le git diff : {e}")
             return ""
+
+    def get_diff_split(self, exclude: Optional[List[str]] = None) -> Tuple[str, List[str]]:
+        """
+        Diff par rapport à HEAD SANS les fichiers générés/volumineux (lockfiles, dist/, *.min.js...).
+        Retourne (diff filtré, fichiers exclus) : les agents relisent le diff filtré, le rapport garde la liste.
+        """
+        patterns = DEFAULT_DIFF_EXCLUDES if exclude is None else exclude
+        try:
+            self._run_git(["add", "-N", "."], check=False)
+            names_all = set(self._run_git(["diff", "HEAD", "--name-only"], check=False).splitlines())
+            specs = diff_exclude_specs(patterns)
+            diff = self._run_git(["diff", "HEAD", "--", "."] + specs, check=False)
+            kept = set(self._run_git(["diff", "HEAD", "--name-only", "--", "."] + specs, check=False).splitlines())
+            return diff, sorted(names_all - kept)
+        except Exception as e:
+            logger.warning(f"Impossible de récupérer le git diff : {e}")
+            return "", []
 
     def get_modified_files(self) -> List[str]:
         """

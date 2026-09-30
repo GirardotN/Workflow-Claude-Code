@@ -146,6 +146,9 @@ JEV_MAX_RETRIES = int(os.getenv("JEV_MAX_RETRIES", "2"))
 JEV_THRESHOLD = float(os.getenv("JEV_THRESHOLD", "0.5"))
 # L'API refuse les états de plus de ~32 000 tokens (HTTP 400 max_tokens_exceeded) : plafond prudent en caractères
 JEV_MAX_STATE_CHARS = int(os.getenv("JEV_MAX_STATE_CHARS", "60000"))
+# Plafond (caractères) du diff / code inséré dans les prompts des agents ; au-delà, troncature au milieu
+MAX_DIFF_CHARS = int(os.getenv("MAX_DIFF_CHARS", "150000"))
+
 # Ce qui est envoyé à Jev pour les validations : "full" (diff masqué + review) ou "review-only"
 JEV_SEND = os.getenv("JEV_SEND", "full").strip().lower()
 
