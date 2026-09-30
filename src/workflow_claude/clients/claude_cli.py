@@ -255,9 +255,7 @@ class ClaudeCliClient:
         logger.debug(f"Exécution Claude CLI : model={model}, cwd={cwd}, prompt={len(prompt)} caractères (stdin)")
         start_t = time.perf_counter()
         try:
-            # Octets exacts : en mode texte, Python convertirait chaque 
- du prompt en 
- sous Windows.
+            # Octets exacts : en mode texte, Python convertit chaque LF du prompt en CRLF sous Windows.
             raw = subprocess.run(
                 cmd,
                 input=prompt.encode("utf-8"),
