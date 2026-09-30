@@ -138,3 +138,33 @@ while start_idx != -1:
 ```
 
 Ce parseur garantit une extraction 100 % fiable de la réponse utile, même en présence de logs de préambule ou de code imbriqué complexe.
+
+---
+
+## 5. TypeSafe Jev : format réel, fail-closed et confidentialité
+
+### Format de l'API (relevé contre le service)
+`POST /v1/systemone` avec `{"model": "jev-latest", "state": "<texte>", "questions": {...}}`.
+- **Routage** : question `choice` (`instructions` + `criteria` = options et descriptions) → `answers.<clé>.choice`, `confidence`, `probabilities`. Les descriptions des niveaux de complexité et des spécialités sont transmises à Jev.
+- **Validation** : question `noul` → `answers.<clé>.noul` ∈ [0, 1] = probabilité que la réponse soit « oui ». Mesures : diff sain 0,77–0,89 ; diff avec injection SQL et division par zéro 0,01.
+- Erreurs : `401/403` authentification ; `400` requête invalide ou `max_tokens_exceeded` (état > ~32 000 tokens) ; `422` schéma. `/v1/decide` n'existe pas (404).
+
+> Jusqu'à la version précédente, le client lisait une clé `results` qui n'existe pas dans la réponse : la probabilité par défaut (1.0) faisait **valider toutes les revues**. Un test de non-régression couvre ce cas.
+
+### Fail-closed
+Une réponse absente, hors format (`noul` manquant, hors [0,1], option inconnue, JSON invalide, clé `answers` absente) lève `JevApiError` : **jamais** de validation par défaut. Sur erreur réseau, 429 ou 5xx, 2 reprises avec attente ; ensuite le workflow s'arrête, le dépôt est remis en état et le code de sortie est 4. Sans clé TypeSafe, le programme refuse de démarrer ; le mode simulation n'existe que via `--mock` (bandeau permanent, `report.jev_mode = "mock"`).
+
+### Ce qui est envoyé à Jev, et comment
+| Étape | Contenu | Traitement |
+| :--- | :--- | :--- |
+| Routage (complexité, spécialité) | la spécification produite par Claude | secrets masqués, plafonné |
+| Validation qualité / sécurité (`--jev-send full`) | diff + revue | **secrets masqués**, diff tronqué au milieu si trop long (la revue est conservée) |
+| Validation (`--jev-send review-only`) | revue seule | aucun code transmis |
+
+Le masquage (`jev_context.py`) remplace par `[REDACTED:<type>]` : clés Anthropic/OpenAI/GitHub/AWS/Google/Slack, JWT, blocs de clé privée, `Bearer …`, identifiants dans les URL et valeurs de `password/secret/token/api_key/...`. C'est un masquage « au mieux » par expressions régulières, pas une garantie : pour ne rien transmettre du code, utilisez `--jev-send review-only`. La clé TypeSafe n'apparaît jamais dans les erreurs, les journaux ni les contextes.
+
+### Contrôle de cohérence
+Les relecteurs terminent par `VERDICT: PASS` ou `VERDICT: FAIL`. Si ce verdict contredit la décision de Jev, un avertissement est journalisé et la contradiction est enregistrée dans `report.decisions` (`consistent: false`) ; la décision de Jev s'applique.
+
+### Traçabilité
+Chaque décision Jev (étape, résultat, probabilité, seuil, latence, tokens, tentatives, troncature) est enregistrée dans `report.decisions` et listée dans le résumé du CLI.

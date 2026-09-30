@@ -79,6 +79,20 @@ Symptôme : `ClaudeTimeoutError: Timeout (900s) dépassé ...`. Augmentez `CLAUD
 
 ---
 
+### 2 quater. Erreurs TypeSafe Jev (code de sortie 4)
+
+| Message | Cause | Solution |
+| :--- | :--- | :--- |
+| `Clé TypeSafe absente …` | `TYPESAFE_API_KEY` absente de `.env` / de l'environnement | Renseignez-la, ou lancez avec `--mock` (simulation, validations non fiables) |
+| `Clé TypeSafe refusée (HTTP 401/403)` | Clé invalide ou révoquée | Vérifiez la clé sur typesafe.ai ; `workflow --doctor` la teste |
+| `TypeSafe Jev indisponible (HTTP 5xx)` / `Erreur de communication …` | Service ou réseau en panne après les reprises | Réessayez plus tard ; le dépôt a été remis en état |
+| `max_tokens_exceeded` | Contexte trop long pour l'API | Baissez `JEV_MAX_STATE_CHARS` ou utilisez `--jev-send review-only` |
+| `Réponse de TypeSafe Jev inattendue` | Format de réponse modifié côté service | Signalez-le : le workflow s'arrête volontairement plutôt que de valider |
+
+Le workflow ne valide **jamais** du code faute de réponse de Jev : il s'arrête.
+
+---
+
 ### 3. Conflit lors de la restauration du Stash (`stash_pop`)
 
 #### Symptôme

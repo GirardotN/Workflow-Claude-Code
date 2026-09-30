@@ -24,7 +24,7 @@ Il neutralise définitivement les écueils critiques des agents autonomes conven
 | **Sécurité du Code Local** | Totale (contrôle humain) | **Élevée** (risque d'écrasement ou destruction par `git clean -fd`) | **Hermétique (Stash Guard)** : `git stash` + `finally: git stash pop` |
 | **Validation des Tests** | Manuelle | Ignorée ou aveugle aux échecs préexistants | **Oracle Baseline (Cycle 0)** avec auto-guérison et normalisation anti-jitter |
 | **Isolation Cognitive** | Dépend de la rigueur du relecteur | Contexte saturé provoquant des biais de confirmation | **Isolation Stricte** : La revue qualité ne voit que le code brut ou le diff |
-| **Vitesse d'Arbitrage** | Lente (attente de review humaine) | Lente (invocations LLM coûteuses pour un oui/non) | **Instantanée & Déterministe** via TypeSafe Jev (classification/probabilité) |
+| **Vitesse d'Arbitrage** | Lente (attente de review humaine) | Lente (invocations LLM coûteuses pour un oui/non) | **Rapide (≈ 0,5 à 1 s mesuré)** via TypeSafe Jev (classification/probabilité) |
 | **Gestion Multiplateforme** | Manuelle | Souvent bloqué sous Windows (`claude.cmd`, encodage CP1252) | **Universelle** (Linux, macOS, Windows avec `comspec` sécurisé & UTF-8) |
 | **Résilience du Parsing** | N/A | Crashe si du code généré contient des accolades `{}` | **Parseur lexical d'accolades équilibrées** insensible aux imbrications |
 | **Empreinte Système** | N/A | Bloatware lourd (LangChain, autogen, 50+ dépendances) | **Zero Bloatware** : Seulement 2 dépendances légères (`requests`, `dotenv`) |
@@ -43,7 +43,9 @@ Il neutralise définitivement les écueils critiques des agents autonomes conven
   ```
 
 > [!NOTE]
-> Une clé API **TypeSafe** pour le modèle Jev est facultative. Si aucune variable `TYPESAFE_API_KEY` n'est configurée, l'orchestrateur active automatiquement son simulateur heuristique local haute performance.
+> Une clé API **TypeSafe** (`TYPESAFE_API_KEY`, dans `.env`) est **obligatoire** : sans elle, `workflow` refuse de démarrer (code de sortie 4) plutôt que de valider du code avec un simulateur. `--mock` est le seul mode simulation : Claude **et** Jev sont simulés, un bandeau l'indique et les validations **ne sont pas fiables** (à réserver aux démonstrations et aux tests).
+>
+> Vérifiez votre installation avec `workflow --doctor` (Git, CLI Claude, session, clé TypeSafe).
 
 ---
 

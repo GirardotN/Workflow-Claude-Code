@@ -14,6 +14,10 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - Spécification d'origine déplacée vers `docs/adr/0000-spec-origine.md`.
 
 ### Corrigé
+- **Jev : toutes les validations passaient.** Le client lisait `results.<clé>.probability` alors que l'API renvoie `answers.<clé>.noul` ; la valeur par défaut (1.0) validait tout, et le repli sur `/v1/decide` (endpoint inexistant, 404) ne fonctionnait jamais. Le client suit maintenant le format réel, vérifié contre le service.
+- **Fail-closed** : réponse absente/invalide ou service en panne → `JevApiError` (code de sortie 4), jamais de validation par défaut ; reprises sur erreur réseau/429/5xx.
+- Sans clé TypeSafe, le client ne bascule plus silencieusement en simulation : refus de démarrer (sauf `--mock`).
+- Le code de sortie du CLI reflète le résultat : `2` si le workflow est incomplet (avant : toujours `0`), `3` Claude, `4` Jev, `130` Ctrl-C.
 - **Client Claude** : le prompt est envoyé sur **stdin** en octets exacts (plus de limite de ligne de commande Windows, plus d'injection via `cmd`, plus de LF → CRLF sous Windows). Sous Windows, le binaire natif `claude.exe` est appelé directement (sans `cmd.exe`).
 - **« Zéro crédit API » enfin garanti** : `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, Bedrock/Vertex/Foundry sont retirées de l'environnement du sous-processus (sauf `--allow-api-key`).
 - **Les erreurs Claude ne sont plus prises pour des résultats** : `is_error` du JSON est lu avant le code de sortie ; erreurs typées `ClaudeAuthError`, `ClaudeQuotaError`, `ClaudeTimeoutError`.
@@ -27,6 +31,11 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - `TestRunner.run_tests` : `custom_cmd` accepte une liste d'arguments ; découpage non-POSIX sous Windows.
 
 ### Ajouté
+- `jev_context.py` : masquage des secrets et plafonnement du texte envoyé à Jev ; `--jev-send {full,review-only}` / `JEV_SEND`.
+- Trace des décisions Jev dans le rapport (`report.decisions`, `report.jev_mode`) et dans le résumé du CLI ; contrôle de cohérence avec le `VERDICT: PASS|FAIL` des relecteurs.
+- Descriptions des niveaux de complexité et des spécialités transmises à Jev pour le routage.
+- `workflow --doctor` teste la clé TypeSafe (ping minimal) ; `JEV_MAX_RETRIES`, `JEV_THRESHOLD`, `JEV_MAX_STATE_CHARS`.
+- Tests : faux serveur TypeSafe au format réel (`tests/fake_jev.py`), tests du CLI et des codes de sortie.
 - `workflow --doctor` : diagnostic de l'environnement sans consommer de quota.
 - `--allow-api-key` / `ALLOW_API_KEY`, délais par rôle (`CLAUDE_TIMEOUT_DEV_SECONDS` 900 s, `CLAUDE_TIMEOUT_SPEC_SECONDS` 300 s), reprises sur erreur transitoire (`CLAUDE_MAX_RETRIES`).
 - `roles.py` (`Role`), `tool_policy.py` (outils par rôle, liste blanche/noire Bash pour `--allow-bash`), `doctor.py`.
@@ -35,5 +44,6 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - `.gitattributes`, `.editorconfig`, `.pre-commit-config.yaml`, `CONTRIBUTING.md`, `SECURITY.md`.
 
 ### Supprimé
+- `TYPESAFE_FALLBACK_URL` et le repli `/v1/decide` (endpoint inexistant).
 - **`allow_dirty` / `ALLOW_DIRTY`** : incompatible avec le rollback (détruisait le travail de l'utilisateur). Un arbre de travail non propre est toujours mis en réserve ; si la mise en réserve échoue, le workflow s'arrête.
 - Variable morte `DEFAULT_PROJECT_DIR`.

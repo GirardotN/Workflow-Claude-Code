@@ -23,7 +23,7 @@ Ligne de Commande (CLI)
 ```text
 usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT_DIR]
                 [--standalone] [--commit] [--branch] [--no-branch] [--merge]
-                [--allow-bash] [--allow-api-key] [--doctor] [--run-tests] [--no-tests] [-y] [--workspace WORKSPACE] [-v]
+                [--allow-bash] [--allow-api-key] [--jev-send {full,review-only}] [--doctor] [--run-tests] [--no-tests] [-y] [--workspace WORKSPACE] [-v]
                 [prompt]
 ```
 
@@ -40,6 +40,7 @@ usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT
 | `--merge` | `flag` | `False` | Fusionne automatiquement la branche d'isolation dans la branche source en fin de cycle validé. |
 | `--allow-bash` | `flag` | `False` | Autorise l'outil Bash pour l'agent de développement, **restreint à une liste blanche** (tests, lecture ; git modifiant l'état, `rm`, `curl`, `sudo` interdits — voir [under-the-hood](under-the-hood.md)). |
 | `--allow-api-key` | `flag` | `False` | Laisse passer `ANTHROPIC_API_KEY` & co au CLI Claude (**facturation à l'usage**). Par défaut elles sont retirées pour n'utiliser que l'abonnement. |
+| `--jev-send` | `full` \| `review-only` | `full` | Données envoyées au service tiers TypeSafe pour les validations (voir [SECURITY](../SECURITY.md)). |
 | `--doctor` | `flag` | — | Vérifie l'environnement (git, CLI Claude, options, session, clés) sans consommer de quota, puis quitte (code 1 si point bloquant). |
 | `--run-tests` | `flag` | `True` | Exécute automatiquement la suite de tests du projet hôte comme oracle de validation déterministe. |
 | `--no-tests` | `flag` | — | Désactive l'exécution des tests du projet hôte. |
@@ -57,10 +58,13 @@ Copiez le fichier [.env.example](../.env.example) vers `.env` dans le **réperto
 
 | Variable | Type | Valeur par défaut | Rôle & Description |
 | :--- | :--- | :--- | :--- |
-| `TYPESAFE_API_KEY` | `string` | `""` | Clé API pour le moteur TypeSafe Jev (obtenue sur [typesafe.ai](https://typesafe.ai)). Si absente, bascule automatique sur le mock heuristique local. |
-| `TYPESAFE_API_URL` | `url` | `https://api.typesafe.ai/v1/systemone` | Endpoint officiel TypeSafe System One. |
-| `TYPESAFE_FALLBACK_URL` | `url` | `https://api.typesafe.ai/v1/decide` | Endpoint de secours pour l'API TypeSafe Decide directe. |
+| `TYPESAFE_API_KEY` | `string` | `""` | Clé API TypeSafe Jev (obtenue sur [typesafe.ai](https://typesafe.ai)). **Obligatoire** sauf avec `--mock` : sans elle, le programme refuse de démarrer (code 4). Jamais affichée ni journalisée, jamais renvoyée dans les prompts. |
+| `TYPESAFE_API_URL` | `url` | `https://api.typesafe.ai/v1/systemone` | Endpoint TypeSafe System One (il n'existe pas d'endpoint `/v1/decide`). |
 | `TYPESAFE_TIMEOUT_SECONDS`| `float` | `30.0` | Délai d'attente maximum pour les requêtes HTTP vers l'API TypeSafe. |
+| `JEV_MAX_RETRIES` | `int` | `2` | Reprises (attente 1 s, 2 s ; `Retry-After` respecté, plafonné à 30 s) sur erreur réseau, 429 et 5xx. Jamais pour 400/401/403/422. Après épuisement : arrêt du workflow. |
+| `JEV_THRESHOLD` | `float` | `0.5` | Seuil de validation : la probabilité `noul` (réponse « oui ») doit l'atteindre. |
+| `JEV_MAX_STATE_CHARS` | `int` | `60000` | Plafond du texte envoyé à Jev (l'API refuse ~32 000 tokens). Au-delà, troncature au milieu du diff (la revue est conservée). |
+| `JEV_SEND` | `full` ou `review-only` | `full` | `full` : diff (secrets masqués) + revue ; `review-only` : revue seule, aucun code transmis. Équivalent de `--jev-send`. |
 | `CLAUDE_BIN` | `path` | Auto-détecté | Chemin absolu personnalisé vers le binaire `claude` (utile si non présent dans le `PATH`). |
 | `CLAUDE_TIMEOUT_SECONDS` | `int` | `180` | Délai par défaut (revues, feedback, doc & commit). |
 | `CLAUDE_TIMEOUT_SPEC_SECONDS` | `int` | `300` | Délai de l'étape d'exploration / spécification. |
@@ -72,6 +76,21 @@ Copiez le fichier [.env.example](../.env.example) vers `.env` dans le **réperto
 | `USE_BRANCH` | `0` ou `1` | `1` | Isoler le travail sur une branche dédiée `workflow/ai-*`. |
 | `RUN_TESTS` | `0` ou `1` | `1` | Exécuter la suite de tests du projet hôte comme oracle. |
 | `MOCK_SERVICES` | `0` ou `1` | `0` | Forcer le mode simulation globale par défaut. |
+
+---
+
+## Codes de sortie
+
+| Code | Signification |
+| :--- | :--- |
+| `0` | Succès |
+| `1` | Erreur inattendue ou précondition non remplie (dépôt sans commit, identité Git absente, arbre non mis en réserve…) |
+| `2` | Workflow terminé **sans succès** (circuit breaker, commit refusé par un hook…) |
+| `3` | CLI Claude : session absente/expirée, limite d'usage atteinte, timeout, erreur |
+| `4` | TypeSafe Jev : clé absente ou refusée, service indisponible, réponse invalide |
+| `130` | Interruption (Ctrl-C) |
+
+Dans tous les cas d'échec, le dépôt est remis dans son état d'origine et vos modifications en cours sont restaurées.
 
 ---
 

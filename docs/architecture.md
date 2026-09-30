@@ -14,9 +14,9 @@ L'architecture s'inspire de la théorie cognitive des processus duaux :
    - **Économie de tokens** : Aucune clé `ANTHROPIC_API_KEY` n'est requise ; le système s'appuie sur la session locale active de l'utilisateur (Claude Pro / Max 5x).
 
 2. **Système Un (Décision Binaire Réflexe & Routage Déterministe)** :
-   - Délégué au moteur décisionnel **TypeSafe Jev** (endpoints `/v1/systemone` et `/v1/decide`).
+   - Délégué au moteur décisionnel **TypeSafe Jev** (endpoint `POST /v1/systemone`, questions de type `choice` et `noul`).
    - Responsable des arbitrages rapides : choix du niveau de complexité, sélection de la spécialité technique du développeur, et validation/rejet binaire (Qualité et Sécurité).
-   - **Avantage** : Latence ultra-faible (< 200 ms), format déterministe (`choice` ou probabilité binaire `noul`/`binary`), et zéro hallucination de complaisance.
+   - **Avantage** : latence faible (≈ 0,5 à 1 s mesuré), sortie structurée (`choice` + confiance, ou probabilité `noul` de répondre « oui »), sans réponse en texte libre. **Garde-fou** : fail-closed — une réponse absente, invalide ou une panne du service arrête le workflow, elle ne vaut jamais « validé ».
 
 ---
 
@@ -150,11 +150,11 @@ L'orchestrateur adapte la puissance du modèle à l'effort cognitif de chaque ph
 | Étape / Rôle | Tâche Simple | Tâche Moyenne | Tâche Complexe | Justification Cognitive & Économique |
 | :--- | :--- | :--- | :--- | :--- |
 | **1. Spécification Technique** | **Sonnet** | **Sonnet** | **Sonnet** | Vision architecturale équilibrée et cartographie du codebase. |
-| **2. Aiguillage & Rôle Dev** | **Jev** (`choice`) | **Jev** (`choice`) | **Jev** (`choice`) | Déterministe, instantané (< 200 ms), zéro coût de token. |
+| **2. Aiguillage & Rôle Dev** | **Jev** (`choice`) | **Jev** (`choice`) | **Jev** (`choice`) | Sortie structurée, rapide (≈ 0,5 à 1 s), aucun token Claude consommé. |
 | **3. Agent de Développement** | **Sonnet** | **Sonnet** | **Opus** | Sonnet pour les tâches directes ; Opus pour les tâches complexes. |
 | **4. Oracle de Test** | `TestRunner` | `TestRunner` | `TestRunner` | Exécution native hermétique (`pytest`, `npm`, `cargo`, `go`). |
 | **5. Audit Bug & Qualité** | **Sonnet** | **Sonnet** | **Opus** | Rigueur critique ; Opus est intransigeant sur les architectures lourdes. |
-| **6. Décision Qualité** | **Jev** (`noul`) | **Jev** (`noul`) | **Jev** (`noul`) | Arbitrage binaire probabiliste impartial. |
+| **6. Décision Qualité** | **Jev** (`noul`) | **Jev** (`noul`) | **Jev** (`noul`) | Arbitrage binaire probabiliste : `noul` ≥ seuil (0,5 par défaut) = validé. |
 | **7. Synthèse Feedback Qualité** | **Haiku** | **Haiku** | **Sonnet** | Puces d'action concises sans surcharge de contexte. |
 | **8. Audit Cyber-Sécurité** | *(Non exécuté)* | **Sonnet** | **Sonnet** | Analyse OWASP Top 10, injections, gestion des secrets. |
 | **9. Décision Sécurité** | *(Non exécuté)* | **Jev** (`noul`) | **Jev** (`noul`) | Tolérance zéro aux failles logiques ou d'injection. |
