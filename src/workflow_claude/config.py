@@ -137,10 +137,17 @@ ALLOW_API_KEY = env_bool("ALLOW_API_KEY", False)
 
 # Configuration TypeSafe Jev API
 TYPESAFE_API_KEY = os.getenv("TYPESAFE_API_KEY", "")
-# Endpoint officiel System One (TypeSafe AI) avec fallback sur decide
+# Endpoint System One (TypeSafe AI). Il n'existe pas d'endpoint /v1/decide (404 constaté).
 TYPESAFE_API_URL = os.getenv("TYPESAFE_API_URL", "https://api.typesafe.ai/v1/systemone")
-TYPESAFE_FALLBACK_URL = os.getenv("TYPESAFE_FALLBACK_URL", "https://api.typesafe.ai/v1/decide")
 TYPESAFE_TIMEOUT_SECONDS = float(os.getenv("TYPESAFE_TIMEOUT_SECONDS", "30.0"))
+# Reprises sur erreur transitoire (réseau, 429, 5xx) avant d'abandonner (le workflow s'arrête : fail-closed)
+JEV_MAX_RETRIES = int(os.getenv("JEV_MAX_RETRIES", "2"))
+# Seuil de validation : `noul` (probabilité que la réponse soit « oui ») >= seuil => validé
+JEV_THRESHOLD = float(os.getenv("JEV_THRESHOLD", "0.5"))
+# L'API refuse les états de plus de ~32 000 tokens (HTTP 400 max_tokens_exceeded) : plafond prudent en caractères
+JEV_MAX_STATE_CHARS = int(os.getenv("JEV_MAX_STATE_CHARS", "60000"))
+# Ce qui est envoyé à Jev pour les validations : "full" (diff masqué + review) ou "review-only"
+JEV_SEND = os.getenv("JEV_SEND", "full").strip().lower()
 
 # Limite de rétablissement / boucles de feedback
 MAX_RETRIES = int(os.getenv("MAX_WORKFLOW_RETRIES", "4"))
