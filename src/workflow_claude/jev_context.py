@@ -27,7 +27,7 @@ _PATTERNS: List[Tuple[str, "re.Pattern[str]"]] = [
         "credential-assignment",
         re.compile(
             r"(?i)\b[\w.\-]*(?:password|passwd|pwd|secret|token|api[_\-]?key|apikey|access[_\-]?key|private[_\-]?key|auth)[\w.\-]*"
-            r"\s*[:=]\s*['\"]?(?P<secret>[^\s'\",;)]{6,})"
+            r"['\"]?\s*[:=]\s*['\"]?(?!\[REDACTED|bearer\b|basic\b)(?P<secret>[^\s'\",;)]{6,})"
         ),
     ),
 ]
