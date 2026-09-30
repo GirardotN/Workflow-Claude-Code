@@ -97,4 +97,7 @@ def policy_for(role: Role, allow_bash: bool = False) -> ToolPolicy:
                 permission_mode="acceptEdits",
             )
         return ToolPolicy(tools=EDIT_TOOLS, permission_mode="acceptEdits")
+    if role is Role.DOC_EDIT:
+        # édite les fichiers de documentation ; le respect de la liste blanche est imposé après coup (doc_guard.py)
+        return ToolPolicy(tools=EDIT_TOOLS, permission_mode="acceptEdits")
     return ToolPolicy(tools=NO_TOOLS)

@@ -16,6 +16,7 @@ class Role(str, Enum):
     SECURITY = "security"  # revue sécurité d'un diff (aucun outil, aucun accès aux fichiers)
     FEEDBACK = "feedback"  # synthèse d'un feedback correctif (aucun outil)
     DOC = "doc"            # documentation et message de commit (aucun outil)
+    DOC_EDIT = "doc_edit"  # mise à jour de la documentation du projet (édition, fichiers de doc uniquement)
 
     @property
     def is_isolated_reviewer(self) -> bool:
