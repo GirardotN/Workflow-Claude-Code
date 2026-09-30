@@ -125,7 +125,15 @@ def _find_claude_binary() -> str:
 
 # Configuration Claude CLI
 CLAUDE_BIN_PATH = _find_claude_binary()
+# Délai par défaut (revues, feedback, doc) ; l'exploration et surtout le développement sont plus longs.
 CLAUDE_TIMEOUT_SECONDS = int(os.getenv("CLAUDE_TIMEOUT_SECONDS", "180"))
+CLAUDE_TIMEOUT_SPEC_SECONDS = int(os.getenv("CLAUDE_TIMEOUT_SPEC_SECONDS", "300"))
+CLAUDE_TIMEOUT_DEV_SECONDS = int(os.getenv("CLAUDE_TIMEOUT_DEV_SECONDS", "900"))
+# Nombre de nouvelles tentatives sur erreur transitoire (serveur surchargé, 5xx)
+CLAUDE_MAX_RETRIES = int(os.getenv("CLAUDE_MAX_RETRIES", "2"))
+# Par défaut, les clés/fournisseurs payants de l'environnement sont retirés du sous-processus Claude
+# afin de ne consommer que l'abonnement (« zéro crédit API »). ALLOW_API_KEY=1 lève cette protection.
+ALLOW_API_KEY = env_bool("ALLOW_API_KEY", False)
 
 # Configuration TypeSafe Jev API
 TYPESAFE_API_KEY = os.getenv("TYPESAFE_API_KEY", "")
