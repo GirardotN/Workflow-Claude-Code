@@ -432,7 +432,7 @@ class ClaudeCliClient:
         try:
             return subprocess.run(
                 resolve_binary(self.binary_path) + extra_args,
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env=sanitized_env(self.allow_api_key), timeout=timeout, shell=False,
             )
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):

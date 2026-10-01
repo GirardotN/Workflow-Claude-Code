@@ -23,6 +23,17 @@ def main() -> int:
     if argv[:1] == ["--version"]:
         print("9.9.9 (Fake Claude)")
         return 0
+    if argv[:1] == ["--help"]:
+        print("Usage: claude [options]\n  -p, --print\n  --model <model>\n  --output-format <format>\n  --tools <tools...>\n"
+              "  --permission-mode <mode>\n  --no-session-persistence\n  --allowedTools <tools...>")
+        return 0
+    if argv[:2] == ["auth", "status"]:
+        logged_in = os.environ.get("FAKE_CLAUDE_LOGGED_IN", "1") == "1"
+        print(json.dumps({"loggedIn": logged_in, "authMethod": "claude.ai" if logged_in else "none"}))
+        return 0 if logged_in else 1
+    if argv[:2] == ["auth", "garbage"]:
+        print("pas du json")
+        return 0
 
     stdin_data = sys.stdin.buffer.read().decode("utf-8", errors="replace")
     mode = os.environ.get("FAKE_CLAUDE_MODE", "ok")
