@@ -137,7 +137,7 @@ sequenceDiagram
     opt Stash initialement créé
         FSM->>SG: git stash pop
         SG->>WT: Restauration des fichiers modifiés de l'utilisateur
-        Note over Dev,WT: Travail en cours restauré à 100 %
+        Note over Dev,WT: Travail en cours restauré (ou conservé dans le stash en cas de conflit)
     end
 ```
 

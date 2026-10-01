@@ -5,6 +5,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 ## [Non publié]
 
 ### Modifié
+- **Documentation remise d'accord avec le code** : README réécrit (garanties avec leur test, limites connues, codes de sortie, flux à jour), cookbooks (scénarios réels : baseline par ensembles, CI, `--json`, `--jev-send review-only`), suppression des affirmations non vérifiées (« zéro hallucination », « 100 % hermétique », « < 200 ms »).
 - **Un seul moteur** (`fsm.WorkflowEngine`) pour les modes In-Repo et Standalone : ~500 lignes dupliquées supprimées, `orchestrator.py` ne garde que les services. Comportement et noms d'étapes inchangés.
 - **`--mock` ne modifie plus jamais le code d'un projet** : l'agent de dev simulé n'écrit que `WORKFLOW_MOCK.md`. La simulation est indexée par rôle (l'ancienne, par sous-chaîne du prompt, ré-appliquait l'édition lors de la revue d'un diff contenant « in-situ »).
 - Replis silencieux du routage (`from_str`) désormais journalisés ; champ mort `target_files` supprimé.
@@ -42,6 +43,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - `TestRunner.run_tests` : `custom_cmd` accepte une liste d'arguments ; découpage non-POSIX sous Windows.
 
 ### Ajouté
+- `docs/windows.md` et quatre ADR : CLI `claude -p` (0001), rôle de Jev en fail-closed (0002), isolation Git par branche + stash (0003), agent doc encadré par un garde-fou a posteriori (0004), avec index `docs/adr/README.md`.
 - **Couverture de tests mesurée en CI (≈ 96 %, seuil 90 %)**, test d'installation `pipx` et `workflow --version` sur le paquet installé ; `docs/testing.md`.
 - Tests de cas limites Git de bout en bout : sous-modules (propre : fonctionne ; modifié : refus propre sans toucher à votre travail), branche d'origine qui avance pendant le run (fusion sans conflit ; fusion en conflit : aucune fusion à moitié faite, branche conservée).
 - Tests d'infrastructure : configuration, terminal, diagnostics du client Claude, cas d'erreur Git, chemins d'échec de l'isolation.

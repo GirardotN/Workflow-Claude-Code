@@ -133,7 +133,7 @@ while start_idx != -1:
     start_idx = raw_stdout.find("{", start_idx + 1)
 ```
 
-Ce parseur garantit une extraction 100 % fiable de la réponse utile, même en présence de logs de préambule ou de code imbriqué complexe.
+Ce parseur extrait la réponse utile même en présence de logs de préambule ou de code imbriqué (cas couverts par des tests).
 
 ---
 
