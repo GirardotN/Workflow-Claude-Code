@@ -97,6 +97,10 @@ flowchart TD
 
 ---
 
+> En mode In-Repo, une étape `DOC_EDIT` met aussi à jour la documentation existante de votre projet (README, CHANGELOG, `docs/`) dans le même commit ; toute modification hors documentation est annulée automatiquement. Désactivable avec `--no-doc-edit`.
+
+---
+
 ## Documentation Technique Complète
 
 Pour explorer tous les détails architecturaux, les guides avancés et la référence d'ingénierie, consultez la documentation modulaire :

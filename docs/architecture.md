@@ -38,7 +38,7 @@ flowchart TD
     QualSimple --> JevQualSimple{"Jev : Qualité Validée ?"}
     JevQualSimple -->|"Rejet (Rollback Git)"| FbQualSimple["Feedback Correctif Qualité<br/><i>Modèle : Haiku</i>"]
     FbQualSimple --> DevSimple
-    JevQualSimple -->|"Validé"| DocSimple["Doc & Commit Git<br/><i>Modèle : Sonnet</i>"]
+    JevQualSimple -->|"Validé"| DocSimple["Doc, mise à jour de la doc du projet &amp; Commit Git<br/><i>Modèle : Sonnet</i>"]
 
     %% Branche Moyenne
     JevRoute -->|"Tâche Moyenne"| DevMoy["Dev Moyen<br/><i>Modèle : Sonnet</i>"]
@@ -53,7 +53,7 @@ flowchart TD
     SecuMoy --> JevSecuMoy{"Jev : Sécurité Validée ?"}
     JevSecuMoy -->|"Rejet (Rollback Git)"| FbSecuMoy["Feedback Correctif Sécu<br/><i>Modèle : Haiku</i>"]
     FbSecuMoy --> DevMoy
-    JevSecuMoy -->|"Validé"| DocMoy["Doc & Commit Git<br/><i>Modèle : Haiku</i>"]
+    JevSecuMoy -->|"Validé"| DocMoy["Doc, mise à jour de la doc du projet &amp; Commit Git<br/><i>Modèle : Haiku</i>"]
 
     %% Branche Complexe
     JevRoute -->|"Tâche Complexe"| DevComp["Dev Complexe<br/><i>Modèle : Opus</i>"]
@@ -68,7 +68,7 @@ flowchart TD
     SecuComp --> JevSecuComp{"Jev : Sécurité Validée ?"}
     JevSecuComp -->|"Rejet (Rollback Git)"| FbSecuComp["Feedback Correctif Sécu<br/><i>Modèle : Sonnet</i>"]
     FbSecuComp --> DevComp
-    JevSecuComp -->|"Validé"| DocComp["Doc & Commit Git<br/><i>Modèle : Haiku</i>"]
+    JevSecuComp -->|"Validé"| DocComp["Doc, mise à jour de la doc du projet &amp; Commit Git<br/><i>Modèle : Haiku</i>"]
 
     DocSimple --> OutputSuccess(["Succès : Commit, Merge & Artefacts ./output"])
     DocMoy --> OutputSuccess
@@ -160,6 +160,7 @@ L'orchestrateur adapte la puissance du modèle à l'effort cognitif de chaque ph
 | **9. Décision Sécurité** | *(Non exécuté)* | **Jev** (`noul`) | **Jev** (`noul`) | Tolérance zéro aux failles logiques ou d'injection. |
 | **10. Synthèse Feedback Sécu** | *(Non exécuté)* | **Haiku** | **Sonnet** | Directives correctives impératives. |
 | **11. Documentation & Commit** | **Sonnet** | **Haiku** | **Haiku** | Formatage sémantique et commit conventionnel standardisé. |
+| **12. Mise à jour de la doc du projet** *(DOC_EDIT, mode In-Repo)* | **Sonnet** | **Haiku** | **Haiku** | Met à jour README / CHANGELOG / docs/ dans le même commit ; tout ce qui n'est pas de la documentation est annulé (`doc_guard.py`). |
 
 ---
 
@@ -169,3 +170,13 @@ Pour prévenir les biais de confirmation et l'explosion de la fenêtre de contex
 - **L'Agent Qualité** ne reçoit **que** le code brut ou le `git diff`. Il n'a aucun accès au prompt de spécification initial ni à l'identité du développeur, ce qui garantit une relecture neutre et impartiale.
 - **L'Agent Sécurité** reçoit **le code source ET la review qualité** préalable pour identifier les vecteurs d'attaque potentiels.
 - **Les Retours Correctifs** sont reformulés sous forme de listes à puces concises sans réinjecter l'intégralité des échanges passés.
+
+---
+
+## Étape DOC_EDIT (mode In-Repo)
+
+Après la validation par Jev, un agent doté d'outils d'édition (jamais de Bash) met à jour la documentation **existante** du projet : README, CHANGELOG, fichiers `*.md` / `*.rst` / `*.adoc` et dossier `docs/`.
+
+- **Garde-fou** : un instantané du dépôt est pris avant l'agent ; ensuite `doc_guard.enforce` annule tout ce qui n'est pas un fichier de documentation (code, configuration, tests, suppressions) et remet en l'état tout fichier du développeur que l'agent aurait modifié. Le code validé reste donc intact.
+- **Au mieux** : une erreur de l'agent doc (timeout, quota) ne remet pas en cause le code validé ; ce qui a été écrit avant l'échec est conservé s'il s'agit de documentation.
+- **Résultat** : la documentation est commitée avec le code ; `report.doc_diff` / `DOC_CHANGES.diff` en isolent le diff. `--no-doc-edit` (ou `DOC_EDIT=0`) désactive l'étape. Rien n'est fait si le développeur n'a rien modifié.

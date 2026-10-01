@@ -134,6 +134,19 @@ class TestOptions(CliTestCase):
             self.mock_run("--jev-send", "review-only")
         self.assertEqual(orchestrator.call_args.kwargs["jev_send"], "review-only")
 
+    def test_doc_edit_flag_reaches_the_orchestrator_and_defaults_to_enabled(self):
+        stub = dict(
+            is_success=True, is_in_repo=False, workflow_type=None, dev_specialty=None, iterations_count=0,
+            history=[], jev_mode="mock", decisions=[], code_produit="", doc_et_commit="", error_message=None,
+        )
+        for argv, expected in (((), True), (("--no-doc-edit",), False), (("--doc-edit",), True)):
+            with self.subTest(argv=argv):
+                with mock.patch.object(cli, "MultiAgentOrchestrator") as orchestrator:
+                    orchestrator.return_value.run.return_value = mock.Mock(**stub)
+                    _, out, _ = self.mock_run(*argv)
+                self.assertEqual(orchestrator.call_args.kwargs["doc_edit"], expected)
+                self.assertIn("Doc du projet", out)
+
     def test_invalid_jev_send_value_is_rejected_by_argparse(self):
         with contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit) as ctx:
