@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .clients.claude_cli import ClaudeCliClient, ClaudeCliError, detected_billing_env
 from .clients.jev_client import JevApiError, JevClient
+from .clients.test_runner import TestRunner
 from .config import (
     ALLOW_API_KEY,
     CLAUDE_BIN_PATH,
@@ -20,6 +21,8 @@ from .config import (
     JEV_SEND,
     MAX_RETRIES,
     MOCK_SERVICES,
+    TEST_COMMAND,
+    TEST_TIMEOUT_SECONDS,
 )
 from .doctor import run_doctor
 from .isolation import WorkflowPreconditionError
@@ -160,6 +163,20 @@ def main(argv=None) -> int:
         help="Ne pas exécuter les tests du projet",
     )
     parser.add_argument(
+        "--test-cmd",
+        type=str,
+        default=None,
+        metavar="COMMANDE",
+        help="Commande de test du projet (remplace la détection automatique ; sinon TEST_COMMAND ou .workflow.toml)",
+    )
+    parser.add_argument(
+        "--test-timeout",
+        type=int,
+        default=TEST_TIMEOUT_SECONDS,
+        metavar="SECONDES",
+        help=f"Délai maximum de la suite de tests, l'arbre de processus est tué au-delà (défaut: {TEST_TIMEOUT_SECONDS})",
+    )
+    parser.add_argument(
         "-y", "--yes",
         action="store_true",
         default=False,
@@ -230,6 +247,8 @@ def main(argv=None) -> int:
     print(f"• Isolation branche: {'Activée (--branch)' if args.branch else 'Désactivée (--no-branch)'}")
     print(f"• Doc du projet    : {'mise à jour par un agent (hors code, garde-fou)' if args.doc_edit else 'désactivée (--no-doc-edit)'}")
     print(f"• Tests auto       : {'Activés (--run-tests)' if args.run_tests else 'Désactivés (--no-tests)'}")
+    if args.run_tests and (args.test_cmd or TEST_COMMAND):
+        print(f"• Commande de test : {args.test_cmd or TEST_COMMAND}")
     print(f"• Outil Bash       : {'Autorisé (--allow-bash)' if args.allow_bash else 'Désactivé (mode sandbox sécurisé)'}")
     print(f"• Claude CLI path  : {CLAUDE_BIN_PATH}")
     print(f"• TypeSafe Jev     : {'SIMULATION (--mock)' if args.mock else 'API réelle (clé configurée)'}")
@@ -269,6 +288,7 @@ def main(argv=None) -> int:
         on_merge_decision=lambda rep: ask_merge(rep, assume_yes=args.yes),
         jev_send=args.jev_send,
         doc_edit=args.doc_edit,
+        test_runner=TestRunner(timeout_seconds=args.test_timeout, test_command=args.test_cmd or TEST_COMMAND or None),
     )
 
     try:

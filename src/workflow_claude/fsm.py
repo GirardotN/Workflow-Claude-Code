@@ -19,10 +19,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 from . import prompts
+from .clients.test_runner import TestResult, is_regression
 from .models import DevSpecialty, WorkflowExecutionReport, WorkflowType
 from .policy import SPEC_MODEL, ModelPolicy
 from .roles import Role
-from .text_utils import normalize_test_output
 from .ui.terminal import Spinner
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -120,8 +120,7 @@ class InRepoBackend(Backend):
 
     def __init__(self, orch: "MultiAgentOrchestrator"):
         super().__init__(orch)
-        self.baseline_failed = False
-        self.baseline_output = ""
+        self.baseline: Optional[TestResult] = None
         self.spec = ""
 
     def prepare(self, report: WorkflowExecutionReport) -> None:
@@ -133,12 +132,13 @@ class InRepoBackend(Backend):
             baseline = o._run_tests_clean()
         if baseline is None:
             return
+        self.baseline = baseline
         report.baseline_tests_passed = baseline.passed
+        report.baseline_tests_failed = baseline.failed_tests
         if not baseline.passed:
-            self.baseline_failed = True
-            self.baseline_output = baseline.output
+            known = f" ({len(baseline.failed_tests)} test(s) identifié(s))" if baseline.failed_tests else ""
             logger.warning(
-                f"⚠️ BASELINE : La suite de tests échoue DÉJÀ avant toute modification ({baseline.command}). "
+                f"⚠️ BASELINE : La suite de tests échoue DÉJÀ avant toute modification ({baseline.command}){known}. "
                 "Les échecs préexistants ne seront pas considérés comme des régressions de Claude."
             )
 
@@ -188,11 +188,10 @@ class InRepoBackend(Backend):
 
         report.tests_passed = result.passed
         report.tests_output = result.output
-        is_new_failure = not (
-            self.baseline_failed and normalize_test_output(result.output) == normalize_test_output(self.baseline_output)
-        )
+        report.tests_failed = result.failed_tests
         n = state.iter_count
-        if not result.passed and is_new_failure:
+        # Régression = un test échoue qui n'échouait pas dans la baseline (comparaison d'ensembles, pas de texte)
+        if is_regression(self.baseline, result):
             logger.warning(f">>> Échec des tests du projet ({result.command}). Déclenchement de l'auto-correction...")
             o._record_step(report, f"TESTS_FAILED_CYCLE_{n}", "test_runner", result.command, result.output, result.duration_seconds)
             return prompts.tests_failed_feedback(result.command, result.output)
@@ -355,6 +354,9 @@ class WorkflowEngine:
             f"Circuit breaker : Nombre maximum d'itérations ({self.o.max_retries}) atteint. "
             "Arrêt forcé avant un nouveau cycle de développement pour prévenir une consommation incontrôlée."
         )
+        if report.tests_passed is False:
+            failing = f" ({', '.join(report.tests_failed[:5])})" if report.tests_failed else ""
+            err += f" Les tests du projet échouaient encore au dernier cycle{failing}."
         logger.error(err)
         report.error_message = err
         report.is_success = False

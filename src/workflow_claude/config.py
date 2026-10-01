@@ -149,6 +149,11 @@ JEV_MAX_STATE_CHARS = int(os.getenv("JEV_MAX_STATE_CHARS", "60000"))
 # Plafond (caractères) du diff / code inséré dans les prompts des agents ; au-delà, troncature au milieu
 MAX_DIFF_CHARS = int(os.getenv("MAX_DIFF_CHARS", "150000"))
 
+# Tests du projet cible (oracle) : commande imposée (sinon détection auto), délai, taille de sortie conservée
+TEST_COMMAND = os.getenv("TEST_COMMAND", "").strip()
+TEST_TIMEOUT_SECONDS = int(os.getenv("TEST_TIMEOUT_SECONDS", "300"))
+MAX_TEST_OUTPUT_CHARS = int(os.getenv("MAX_TEST_OUTPUT_CHARS", "8000"))
+
 # Ce qui est envoyé à Jev pour les validations : "full" (diff masqué + review) ou "review-only"
 JEV_SEND = os.getenv("JEV_SEND", "full").strip().lower()
 

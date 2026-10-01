@@ -89,6 +89,8 @@ class WorkflowExecutionReport:
     tests_passed: Optional[bool] = None
     tests_output: str = ""
     baseline_tests_passed: Optional[bool] = None
+    baseline_tests_failed: List[str] = field(default_factory=list)  # tests déjà en échec avant toute modification
+    tests_failed: List[str] = field(default_factory=list)           # tests en échec au dernier cycle
     merged: bool = False                          # branche d'isolation fusionnée dans la branche d'origine
     cost_usd: float = 0.0                         # coût cumulé rapporté par le CLI Claude (équivalent API, informatif)
     doc_files_kept: List[str] = field(default_factory=list)      # fichiers de documentation mis à jour par l'agent doc
