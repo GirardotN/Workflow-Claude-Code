@@ -7,6 +7,7 @@ décisions Jev masquées et tracées, tests du projet, persistance) et gère le 
 (`isolation.IsolatedRun` : branche, commit, fusion, stash).
 """
 
+import json
 import logging
 import shutil
 import tempfile
@@ -146,8 +147,19 @@ class MultiAgentOrchestrator:
 
         try:
             if is_in_repo:
-                return self._run_in_repo(prompt_simple, report, raise_on_failure=raise_on_failure)
-            return self._run_standalone(report, raise_on_failure=raise_on_failure)
+                self._run_in_repo(prompt_simple, report, raise_on_failure=raise_on_failure)
+            else:
+                self._run_standalone(report, raise_on_failure=raise_on_failure)
+        except BaseException as exc:
+            # Erreur, Ctrl-C, circuit breaker levé... : le dépôt est déjà remis en état (IsolatedRun), on garde la trace
+            report.is_success = False
+            if not report.error_message:
+                report.error_message = f"{type(exc).__name__}: {exc}"
+            self._persist_to_workspace(report)
+            raise
+        else:
+            self._persist_to_workspace(report)
+            return report
         finally:
             self._cleanup_isolated_cwd()
 
@@ -299,10 +311,6 @@ class MultiAgentOrchestrator:
         guard.leave(merge=merge)
         self._apply_isolation_state(report, guard)
 
-        # Persistance disque si demandée
-        if self.workspace_dir:
-            self._persist_to_workspace(report)
-
         report.is_success = True
         logger.info(f"Workflow In-Repo complété avec succès en {report.iterations_count} itération(s) !")
 
@@ -351,10 +359,6 @@ class MultiAgentOrchestrator:
         engine = WorkflowEngine(self, StandaloneBackend(self), report, raise_on_failure)
         if not engine.run():
             return report
-
-        # Persistance disque si demandée
-        if self.workspace_dir:
-            self._persist_to_workspace(report)
 
         report.is_success = True
         logger.info(f"Workflow complété avec succès en {report.iterations_count} itération(s) !")
@@ -489,19 +493,40 @@ class MultiAgentOrchestrator:
             except Exception as e:
                 logger.error(f"Erreur dans on_step_callback: {e}")
 
+    def _exclude_workspace_from_repo(self, ws_path: Path, report: WorkflowExecutionReport) -> None:
+        """Si le dossier de rapports est DANS le dépôt cible, l'exclut localement (.git/info/exclude)."""
+        if not (report.is_in_repo and self.git):
+            return
+        try:
+            relative = ws_path.resolve().relative_to(self.git.root)
+        except ValueError:
+            return  # hors du dépôt : rien à faire
+        if relative.as_posix() not in ("", "."):
+            if self.git.exclude_locally(relative.as_posix()):
+                logger.info(f"Dossier de rapports '{relative.as_posix()}/' exclu localement de git (.git/info/exclude).")
+
     def _persist_to_workspace(self, report: WorkflowExecutionReport):
-        """Persiste les artefacts générés sur le disque du projet."""
+        """
+        Persiste les artefacts du run, qu'il ait réussi ou non : patch (ou code), documentation, rapport d'audit
+        lisible (`WORKFLOW_AUDIT.md`) et rapport machine (`report.json`, sans le contenu des prompts).
+        Appelé après la remise en état du dépôt ; ne lève jamais.
+        """
+        if not self.workspace_dir:
+            return
         try:
             ws_path = Path(self.workspace_dir)
+            self._exclude_workspace_from_repo(ws_path, report)
             ws_path.mkdir(parents=True, exist_ok=True)
+            ok = report.is_success
 
             if report.is_in_repo:
-                # Mode In-Repo : Sauvegarde du diff dans le workspace
-                diff_file = ws_path / "LATEST_PATCH.diff"
-                diff_file.write_text(report.git_diff, encoding="utf-8")
-                logger.info(f"Patch git validé sauvegardé dans : {diff_file}")
-            else:
-                # Mode Standalone : Sauvegarde du code produit nettoyé de ses balises markdown
+                # Mode In-Repo : patch validé, ou dernière tentative en cas d'échec
+                if report.git_diff:
+                    name = "LATEST_PATCH.diff" if ok else "FAILED_ATTEMPT.diff"
+                    (ws_path / name).write_text(report.git_diff, encoding="utf-8")
+                    logger.info(f"Patch git sauvegardé dans : {ws_path / name}")
+            elif report.code_produit:
+                # Mode Standalone : code produit nettoyé de ses balises markdown
                 cleaned_code, detected_lang = clean_code_output(report.code_produit)
                 ext = LANG_TO_EXT.get(detected_lang) if detected_lang else None
                 if not ext:
@@ -512,48 +537,70 @@ class MultiAgentOrchestrator:
                         DevSpecialty.UI: ".tsx",
                     }
                     ext = ext_map.get(report.dev_specialty, ".txt")
-
-                code_file = ws_path / f"generated_solution{ext}"
+                code_file = ws_path / (f"generated_solution{ext}" if ok else f"rejected_solution{ext}")
                 code_file.write_text(cleaned_code, encoding="utf-8")
                 logger.info(f"Code produit sauvegardé dans : {code_file}")
 
-            # 1 bis. Diff de la seule documentation mise à jour dans le projet (séparé du patch de code)
+            # Diff de la seule documentation du projet (séparé du patch de code)
             if report.doc_diff:
                 (ws_path / "DOC_CHANGES.diff").write_text(report.doc_diff, encoding="utf-8")
+            if report.doc_et_commit:
+                (ws_path / "GENERATED_DOC.md").write_text(report.doc_et_commit, encoding="utf-8")
 
-            # 2. Sauvegarde de la documentation
-            doc_file = ws_path / "GENERATED_DOC.md"
-            doc_file.write_text(report.doc_et_commit, encoding="utf-8")
-            logger.info(f"Documentation sauvegardée dans : {doc_file}")
-
-            # 3. Sauvegarde du rapport d'audit
-            report_file = ws_path / "WORKFLOW_AUDIT.md"
-            lines = [
-                "# Rapport d'Exécution Multi-Agents",
-                f"- **Mode :** {'In-Repo (Modifications directes)' if report.is_in_repo else 'Standalone'}",
-                f"- **Prompt Initial :** {report.prompt_simple}",
-                f"- **Type de Workflow :** {report.workflow_type.value if report.workflow_type else 'N/A'}",
-                f"- **Spécialité :** {report.dev_specialty.value if report.dev_specialty else 'N/A'}",
-                f"- **Itérations :** {report.iterations_count}",
-                f"- **Étapes exécutées :** {len(report.history)}",
-                f"- **Jev :** {'SIMULATION (validations non fiables)' if report.jev_mode == 'mock' else 'API réelle' if report.jev_mode else 'N/A'}",
-            ]
-            if report.cost_usd:
-                lines.append(f"- **Coût équivalent API (informatif) :** {report.cost_usd:.4f} USD")
-            if report.is_in_repo:
-                lines.append(f"- **Dépôt cible :** {report.project_dir}")
-                lines.append(f"- **Fichiers modifiés :** {', '.join(report.modified_files) if report.modified_files else 'Aucun'}")
-                if report.doc_files_kept:
-                    lines.append(f"- **Documentation mise à jour :** {', '.join(report.doc_files_kept)}")
-                if report.doc_files_reverted:
-                    lines.append(f"- **Modifications hors documentation annulées :** {', '.join(report.doc_files_reverted)}")
-                if report.commit_hash:
-                    lines.append(f"- **Commit Git créé :** `{report.commit_hash}`")
-            lines.extend(["", "## Historique des étapes :"])
-            for step in report.history:
-                lines.append(f"- **{step.step_name}** ({step.model}, {step.duration_seconds:.2f}s)")
-            report_file.write_text("\n".join(lines), encoding="utf-8")
-            logger.info(f"Rapport d'audit sauvegardé dans : {report_file}")
-
+            (ws_path / "WORKFLOW_AUDIT.md").write_text(self._audit_markdown(report), encoding="utf-8")
+            (ws_path / "report.json").write_text(
+                json.dumps(report.to_dict(), ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+            )
+            logger.info(f"Rapport d'audit sauvegardé dans : {ws_path / 'WORKFLOW_AUDIT.md'}")
         except Exception as e:
             logger.error(f"Erreur lors de la persistance disque : {e}")
+
+    @staticmethod
+    def _audit_markdown(report: WorkflowExecutionReport) -> str:
+        status = "SUCCÈS" if report.is_success else f"ÉCHEC — {report.error_message or 'raison inconnue'}"
+        jev = "SIMULATION (validations non fiables)" if report.jev_mode == "mock" else ("API réelle" if report.jev_mode else "N/A")
+        lines = [
+            "# Rapport d'Exécution Multi-Agents",
+            f"- **Statut :** {status}",
+            f"- **Mode :** {'In-Repo (Modifications directes)' if report.is_in_repo else 'Standalone'}",
+            f"- **Prompt Initial :** {report.prompt_simple}",
+            f"- **Type de Workflow :** {report.workflow_type.value if report.workflow_type else 'N/A'}",
+            f"- **Spécialité :** {report.dev_specialty.value if report.dev_specialty else 'N/A'}",
+            f"- **Itérations :** {report.iterations_count}",
+            f"- **Étapes exécutées :** {len(report.history)}",
+            f"- **Jev :** {jev}",
+        ]
+        if report.cost_usd:
+            lines.append(f"- **Coût équivalent API (informatif) :** {report.cost_usd:.4f} USD")
+        if report.is_in_repo:
+            lines.append(f"- **Dépôt cible :** {report.project_dir}")
+            lines.append(f"- **Branche d'origine :** {report.original_branch or 'N/A'}")
+            lines.append(f"- **Fichiers modifiés :** {', '.join(report.modified_files) if report.modified_files else 'Aucun'}")
+            if report.baseline_tests_passed is not None:
+                lines.append(f"- **Tests (baseline) :** {'verts' if report.baseline_tests_passed else 'déjà en échec : ' + ', '.join(report.baseline_tests_failed[:10])}")
+            if report.tests_passed is not None:
+                lines.append(f"- **Tests (dernier cycle) :** {'verts' if report.tests_passed else 'en échec : ' + ', '.join(report.tests_failed[:10])}")
+            if report.doc_files_kept:
+                lines.append(f"- **Documentation mise à jour :** {', '.join(report.doc_files_kept)}")
+            if report.doc_files_reverted:
+                lines.append(f"- **Modifications hors documentation annulées :** {', '.join(report.doc_files_reverted)}")
+            if report.commit_hash:
+                lines.append(f"- **Commit Git créé :** `{report.commit_hash}`")
+            if report.merged:
+                lines.append(f"- **Fusion :** dans `{report.original_branch}`")
+            elif report.branch_name:
+                lines.append(f"- **Branche conservée :** `{report.branch_name}`")
+            if report.stash_restored is False:
+                lines.append("- **ATTENTION :** votre travail en cours n'a pas pu être restauré (conflit) : voir `git stash list`")
+        if report.decisions:
+            lines.extend(["", "## Décisions Jev :"])
+            for d in report.decisions:
+                value = f" ({d['value']:.2f})" if isinstance(d.get("value"), (int, float)) else ""
+                latency = f", {d['latency_ms']} ms" if d.get("latency_ms") is not None else ""
+                lines.append(f"- **{d['step']}** : {d['result']}{value}{latency}")
+        lines.extend(["", "## Historique des étapes :"])
+        for step in report.history:
+            cost = step.metadata.get("cost_usd")
+            extra = f", {cost:.4f} USD" if isinstance(cost, (int, float)) else ""
+            lines.append(f"- **{step.step_name}** ({step.model}, {step.duration_seconds:.2f}s{extra})")
+        return "\n".join(lines) + "\n"

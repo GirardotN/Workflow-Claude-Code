@@ -4,11 +4,16 @@ Point d'entrée CLI pour exécuter l'orchestrateur multi-agents Claude & TypeSaf
 """
 
 import argparse
+import contextlib
+import json
 import logging
 import sys
 from pathlib import Path
+from typing import Optional, Tuple
 
+from . import __version__
 from .clients.claude_cli import ClaudeCliClient, ClaudeCliError, detected_billing_env
+from .clients.git_client import GitClient
 from .clients.jev_client import JevApiError, JevClient
 from .clients.test_runner import TestRunner
 from .config import (
@@ -26,14 +31,14 @@ from .config import (
 )
 from .doctor import run_doctor
 from .isolation import WorkflowPreconditionError
-from .models import StepRecord
+from .models import StepRecord, WorkflowExecutionReport
 from .orchestrator import MultiAgentOrchestrator
-from .ui.terminal import confirm_action, format_colored_diff
+from .ui.terminal import confirm_action, format_colored_diff, set_color_enabled
 
 # Codes de sortie (utilisables dans des scripts et en CI)
 EXIT_OK = 0
 EXIT_ERROR = 1          # erreur inattendue ou précondition non remplie (dépôt vide, identité Git absente...)
-EXIT_INCOMPLETE = 2     # workflow terminé sans succès (circuit breaker, commit refusé...)
+EXIT_INCOMPLETE = 2     # workflow terminé sans succès (circuit breaker, commit refusé...) ; 2 = aussi erreur d'usage argparse
 EXIT_CLAUDE = 3         # session / quota / timeout du CLI Claude
 EXIT_JEV = 4            # TypeSafe Jev : clé absente ou refusée, service indisponible, réponse invalide
 EXIT_INTERRUPTED = 130  # Ctrl-C
@@ -49,10 +54,24 @@ if sys.platform == "win32":
         pass
 
 
-def setup_logging(verbose: bool):
+# ---------------------------------------------------------------------------
+# Journalisation et affichage
+# ---------------------------------------------------------------------------
+def setup_logging(verbose: bool, log_file: Optional[str] = None) -> Optional[logging.Handler]:
+    """Configure les logs (stderr) ; avec `log_file`, ajoute un fichier UTF-8 et retourne son handler."""
     level = logging.DEBUG if verbose else logging.INFO
     format_str = "%(asctime)s [%(levelname)s] %(message)s"
     logging.basicConfig(level=level, format=format_str, datefmt="%H:%M:%S")
+    if not log_file:
+        return None
+    handler = logging.FileHandler(log_file, encoding="utf-8")
+    handler.setFormatter(logging.Formatter(format_str, datefmt="%H:%M:%S"))
+    handler.setLevel(logging.DEBUG)
+    root = logging.getLogger()
+    root.addHandler(handler)
+    if root.level > logging.DEBUG and verbose:
+        root.setLevel(logging.DEBUG)
+    return handler
 
 
 def print_step(step: StepRecord):
@@ -65,6 +84,7 @@ def print_step(step: StepRecord):
         "CHECK_QUALITE": "🛡️",
         "FEEDBACK": "⚠️",
         "CHECK_SECU": "🔒",
+        "DOC_EDIT": "📚",
         "FINAL_DOC": "📦",
     }
     icon = "⚙️"
@@ -88,21 +108,27 @@ def ask_merge(report, assume_yes: bool = False) -> bool:
     return merge
 
 
-def main(argv=None) -> int:
+# ---------------------------------------------------------------------------
+# Arguments
+# ---------------------------------------------------------------------------
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Orchestrateur Multi-Agents Claude & TypeSafe Jev (Zero crédit Claude API)"
+        prog="workflow",
+        description="Orchestrateur Multi-Agents Claude & TypeSafe Jev (zéro crédit API Claude). "
+                    "Exemple : workflow --project-dir . \"Ajoute un tri par date dans l'onglet x\"",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "prompt",
         nargs="?",
-        default="Créer un microservice FastAPI d'authentification JWT avec rate limiting",
-        help="Prompt simple décrivant la tâche de développement",
+        default=None,
+        help="Tâche à réaliser, en langage naturel (obligatoire, sauf avec --doctor)",
     )
     parser.add_argument(
         "--mock",
         action="store_true",
         default=MOCK_SERVICES,
-        help="Exécuter en mode simulation/mock (sans appel réseau/CLI)",
+        help="Exécuter en mode simulation/mock (sans appel réseau/CLI) : validations NON fiables, aucun fichier du projet modifié",
     )
     parser.add_argument(
         "--max-retries",
@@ -114,53 +140,49 @@ def main(argv=None) -> int:
         "--project-dir",
         type=str,
         default=None,
-        help="Répertoire du projet existant à modifier (active le mode In-Repo si sous Git)",
+        help="Répertoire du projet existant à modifier : doit être un dépôt Git (sinon utilisez --standalone). "
+             "Sans cette option : le dossier courant s'il est un dépôt Git, sinon mode Standalone",
     )
     parser.add_argument(
         "--standalone",
         action="store_true",
-        help="Forcer le mode autonome (génération d'un fichier dans output/ au lieu d'éditer le projet)",
+        help="Forcer le mode autonome (génération d'un fichier dans le dossier de rapports au lieu d'éditer le projet)",
     )
     parser.add_argument(
         "--commit",
         action="store_true",
-        help="Créer automatiquement le commit Git conventionnel si les modifications sont validées",
+        help="Avec --no-branch : créer le commit conventionnel sur la branche active (sans effet avec l'isolation par branche)",
     )
     parser.add_argument(
         "--branch",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=DEFAULT_USE_BRANCH,
-        help="Isoler le travail sur une branche dédiée workflow/ai-* (défaut: activé)",
-    )
-    parser.add_argument(
-        "--no-branch",
-        action="store_false",
-        dest="branch",
-        help="Travailler directement sur la branche active sans créer de branche d'isolation",
+        help="Isoler le travail sur une branche dédiée workflow/ai-* (défaut: activé ; --no-branch pour travailler sur la branche active)",
     )
     parser.add_argument(
         "--merge",
         action="store_true",
         default=False,
-        help="Fusionner automatiquement la branche d'isolation dans la branche principale en fin de succès",
+        help="Fusionner automatiquement la branche d'isolation dans la branche d'origine en fin de succès",
     )
     parser.add_argument(
         "--allow-bash",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=DEFAULT_ALLOW_BASH,
-        help="Autoriser l'outil Bash pour l'agent de développement, restreint à une liste blanche de commandes (tests, lecture) ; git qui modifie l'état et rm/curl/sudo restent interdits (défaut: désactivé)",
+        help="Autoriser l'outil Bash pour l'agent de développement, restreint à une liste blanche de commandes "
+             "(tests, lecture) ; git qui modifie l'état et rm/curl/sudo restent interdits (défaut: désactivé)",
     )
     parser.add_argument(
         "--run-tests",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=DEFAULT_RUN_TESTS,
-        help="Exécuter automatiquement la suite de tests du projet hôte (pytest, npm test, etc.)",
+        help="Exécuter la suite de tests du projet hôte comme oracle (défaut: activé)",
     )
     parser.add_argument(
         "--no-tests",
         action="store_false",
         dest="run_tests",
-        help="Ne pas exécuter les tests du projet",
+        help="Ne pas exécuter les tests du projet (équivalent de --no-run-tests)",
     )
     parser.add_argument(
         "--test-cmd",
@@ -180,13 +202,14 @@ def main(argv=None) -> int:
         "-y", "--yes",
         action="store_true",
         default=False,
-        help="Accepter automatiquement les confirmations sans invite interactive",
+        help="Accepter automatiquement les confirmations sans invite interactive (fusion)",
     )
     parser.add_argument(
         "--workspace",
         type=str,
         default="./output",
-        help="Répertoire où persister le rapport d'audit et la documentation",
+        help="Répertoire où persister rapport d'audit, report.json, patch et documentation (écrits aussi en cas d'échec ; "
+             "exclu localement de git s'il est dans le dépôt cible)",
     )
     parser.add_argument(
         "--allow-api-key",
@@ -215,30 +238,50 @@ def main(argv=None) -> int:
         help="Vérifier l'environnement (git, CLI Claude, session, options, clés) sans consommer de quota, puis quitter",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "--json",
         action="store_true",
-        help="Activer la journalisation détaillée de débogage",
+        help="Sortie machine : le rapport JSON est écrit sur stdout, tout l'affichage humain passe sur stderr",
     )
+    parser.add_argument("--no-color", action="store_true", help="Désactiver couleurs et animations (NO_COLOR est aussi respecté)")
+    parser.add_argument("--log-file", type=str, default=None, metavar="FICHIER", help="Écrire aussi les logs détaillés dans ce fichier")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Activer la journalisation détaillée de débogage")
+    return parser
 
-    args = parser.parse_args(argv)
-    setup_logging(args.verbose)
 
-    if args.doctor:
-        return run_doctor(ClaudeCliClient(allow_api_key=args.allow_api_key), allow_api_key=args.allow_api_key, mock=args.mock)
+def validate_project_dir(args) -> Optional[str]:
+    """Retourne un message d'erreur si `--project-dir` est inutilisable (au lieu d'un passage silencieux en Standalone)."""
+    if args.standalone or not args.project_dir:
+        return None
+    path = Path(args.project_dir)
+    if not path.is_dir():
+        return f"Le dossier projet '{args.project_dir}' est introuvable."
+    if not GitClient(str(path)).is_git_repository():
+        return (
+            f"'{path}' n'est pas un dépôt Git : le mode In-Repo en a besoin (git init, puis un premier commit). "
+            "Pour générer du code sans projet existant, utilisez --standalone."
+        )
+    return None
 
-    # Échec rapide : sans clé TypeSafe (et sans --mock), on ne démarre pas (les validations ne seraient pas fiables)
-    try:
-        jev_client = JevClient(mock_mode=args.mock)
-    except JevApiError as e:
-        print(f"\n❌ {e}", file=sys.stderr)
-        return EXIT_JEV
+
+# ---------------------------------------------------------------------------
+# Affichage du démarrage et du bilan
+# ---------------------------------------------------------------------------
+def print_banner(args) -> None:
+    if args.standalone:
+        mode = "Standalone forcé (--standalone)"
+    elif args.project_dir:
+        mode = f"In-Repo : {args.project_dir}"
+    elif GitClient(".").is_git_repository():
+        mode = "In-Repo : dossier courant"
+    else:
+        mode = "Standalone (le dossier courant n'est pas un dépôt Git)"
 
     print("\n" + "=" * 70)
     print("🚀 ORCHESTRATEUR MULTI-AGENTS CLAUDE & TYPESAFE JEV")
     print("=" * 70)
     print(f"• Prompt initial   : {args.prompt}")
     print(f"• Mode simulation  : {'OUI (--mock)' if args.mock else 'NON (Claude CLI + TypeSafe API)'}")
-    print(f"• Mode de travail  : {'Standalone forcé (--standalone)' if args.standalone else ('In-Repo: ' + args.project_dir if args.project_dir else 'Auto (In-Repo si dépôt Git)')}")
+    print(f"• Mode de travail  : {mode}")
     if args.commit:
         if args.branch:
             print("• Auto-commit Git  : --commit sans effet avec l'isolation par branche (commit systématique sur workflow/ai-*)")
@@ -249,7 +292,7 @@ def main(argv=None) -> int:
     print(f"• Tests auto       : {'Activés (--run-tests)' if args.run_tests else 'Désactivés (--no-tests)'}")
     if args.run_tests and (args.test_cmd or TEST_COMMAND):
         print(f"• Commande de test : {args.test_cmd or TEST_COMMAND}")
-    print(f"• Outil Bash       : {'Autorisé (--allow-bash)' if args.allow_bash else 'Désactivé (mode sandbox sécurisé)'}")
+    print(f"• Outil Bash       : {'Autorisé, liste blanche (--allow-bash)' if args.allow_bash else 'Désactivé'}")
     print(f"• Claude CLI path  : {CLAUDE_BIN_PATH}")
     print(f"• TypeSafe Jev     : {'SIMULATION (--mock)' if args.mock else 'API réelle (clé configurée)'}")
     if not args.mock:
@@ -268,6 +311,88 @@ def main(argv=None) -> int:
         else:
             print(f"ℹ️ {', '.join(billing_vars)} détecté(s) dans l'environnement : retiré(s) du sous-processus Claude "
                   "(abonnement uniquement). --allow-api-key pour les conserver.\n")
+
+
+def print_summary(report: WorkflowExecutionReport, args) -> None:
+    print("\n" + "=" * 70)
+    if report.is_success:
+        print("✅ WORKFLOW TERMINÉ AVEC SUCCÈS")
+    else:
+        print(f"⚠️ WORKFLOW INCOMPLET : {report.error_message}")
+    print("=" * 70)
+    print(f"• Mode effectif    : {'In-Repo (Modifications directes dans le projet)' if report.is_in_repo else 'Standalone (Fichier unique dans le dossier de rapports)'}")
+    print(f"• Type de workflow : {report.workflow_type.value if report.workflow_type else 'N/A'}")
+    print(f"• Développeur       : {report.dev_specialty.value if report.dev_specialty else 'N/A'}")
+    print(f"• Cycles exécutés  : {report.iterations_count}")
+    print(f"• Total étapes     : {len(report.history)}")
+    if report.cost_usd:
+        print(f"• Coût équivalent API : {report.cost_usd:.4f} USD (informatif : l'abonnement n'est pas facturé à l'usage)")
+    if report.jev_mode == "mock":
+        print("• Jev              : SIMULATION (validations non fiables)")
+    if report.decisions:
+        print(f"• Décisions Jev    : {len(report.decisions)}")
+        for d in report.decisions:
+            value = f" ({d['value']:.2f})" if isinstance(d.get("value"), (int, float)) else ""
+            mark = {True: "✅", False: "❌"}.get(d["result"], "•") if d["kind"] == "noul" else "•"
+            print(f"    {mark} {d['step']}: {d['result']}{value}")
+
+    if report.is_in_repo:
+        print(f"• Dépôt cible      : {report.project_dir}")
+        if report.branch_name:
+            print(f"• Branche de travail: {report.branch_name}")
+        if report.original_branch:
+            print(f"• Branche source   : {report.original_branch}")
+        if report.tests_passed is not None:
+            print(f"• Suite de tests   : {'✅ Succès (Oracle vert)' if report.tests_passed else '❌ Échecs détectés'}")
+        print(f"• Fichiers modifiés: {', '.join(report.modified_files) if report.modified_files else 'Aucun'}")
+        if report.doc_files_kept:
+            print(f"• Doc mise à jour  : {', '.join(report.doc_files_kept)}")
+        if report.doc_files_reverted:
+            print(f"• Hors doc annulé  : {', '.join(report.doc_files_reverted)}")
+        if report.commit_hash:
+            print(f"• Commit Git créé  : [{report.commit_hash}]")
+
+        if report.git_diff:
+            print("\n--- GIT DIFF DES MODIFICATIONS IN-SITU ---")
+            diff_display = report.git_diff[:2500] + ("\n... [tronqué pour affichage]" if len(report.git_diff) > 2500 else "")
+            print(format_colored_diff(diff_display))
+
+        # Bilan de l'isolation Git : l'orchestrateur est déjà revenu sur la branche d'origine
+        # et a restauré le stash ; il ne reste qu'à informer l'utilisateur.
+        if report.is_success and report.merged:
+            print(f"\n✅ Fusion réussie dans '{report.original_branch}' (vous êtes de retour sur cette branche).")
+        elif report.is_success and report.branch_name and report.branch_name != report.original_branch:
+            print("\n" + "-" * 70)
+            print(f"ℹ️ Les modifications validées sont sur la branche '{report.branch_name}' (vous êtes de retour sur '{report.original_branch}').")
+            if report.original_branch and report.original_branch != "HEAD":
+                print(f"  Pour les intégrer : git merge {report.branch_name}")
+            else:
+                print(f"  Pour les intégrer : git merge {report.branch_name} (depuis la branche de votre choix)")
+            print("-" * 70)
+        if report.stash_restored is False:
+            print(
+                "\n⚠️ Vos modifications locales mises en réserve n'ont pas pu être restaurées automatiquement "
+                "(conflit). Elles sont conservées : git stash list, puis git stash pop."
+            )
+    elif report.code_produit:
+        print("\n--- CODE PRODUIT ---")
+        print(report.code_produit[:600] + ("\n... [tronqué pour affichage]" if len(report.code_produit) > 600 else ""))
+
+    if report.doc_et_commit:
+        print("\n--- DOCUMENTATION & COMMIT GIT ---")
+        print(report.doc_et_commit)
+
+    if args.workspace:
+        print(f"\n📂 Rapports (audit, report.json, patch) : {Path(args.workspace).resolve()}")
+    print("=" * 70 + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Exécution
+# ---------------------------------------------------------------------------
+def execute(args, jev_client: JevClient) -> Tuple[int, Optional[WorkflowExecutionReport], Optional[str]]:
+    """Lance le workflow. Retourne (code de sortie, rapport éventuel, message d'erreur éventuel)."""
+    print_banner(args)
 
     # --mock : l'agent de développement simulé n'écrit qu'un fichier marqueur, jamais dans le code du projet
     claude_client = ClaudeCliClient(mock_mode=args.mock, allow_api_key=args.allow_api_key, mock_edit_files=False)
@@ -294,90 +419,78 @@ def main(argv=None) -> int:
     try:
         report = orchestrator.run(args.prompt)
     except KeyboardInterrupt:
-        print("\n⛔ Interrompu (Ctrl-C). Votre dépôt a été remis dans son état d'origine et vos modifications restaurées.", file=sys.stderr)
-        return EXIT_INTERRUPTED
+        message = "Interrompu (Ctrl-C). Votre dépôt a été remis dans son état d'origine et vos modifications restaurées."
+        print(f"\n⛔ {message}", file=sys.stderr)
+        return EXIT_INTERRUPTED, None, message
     except JevApiError as e:
         print(f"\n❌ TypeSafe Jev : {e}\nLe workflow a été arrêté (aucune validation par défaut). Votre dépôt a été remis en état.", file=sys.stderr)
-        return EXIT_JEV
+        return EXIT_JEV, None, f"TypeSafe Jev : {e}"
     except ClaudeCliError as e:
         print(f"\n❌ Claude CLI : {e}\nVotre dépôt a été remis en état.", file=sys.stderr)
-        return EXIT_CLAUDE
+        return EXIT_CLAUDE, None, f"Claude CLI : {e}"
     except WorkflowPreconditionError as e:
         print(f"\n❌ {e}", file=sys.stderr)
-        return EXIT_ERROR
+        return EXIT_ERROR, None, str(e)
     except Exception as e:
         print(f"\n❌ Erreur fatale durant le workflow : {e}", file=sys.stderr)
+        return EXIT_ERROR, None, f"Erreur fatale : {e}"
+
+    print_summary(report, args)
+    return (EXIT_OK if report.is_success else EXIT_INCOMPLETE), report, report.error_message
+
+
+def emit_json(code: int, report: Optional[WorkflowExecutionReport], error: Optional[str]) -> None:
+    """Écrit le rapport machine sur stdout (--json) : le rapport complet s'il existe, sinon un résumé d'erreur."""
+    payload = report.to_dict() if report is not None else {"is_success": False, "error_message": error}
+    payload["exit_code"] = code
+    print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+
+
+def main(argv=None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.no_color:
+        set_color_enabled(False)
+    log_handler = setup_logging(args.verbose, args.log_file)
+    try:
+        return _main(parser, args)
+    finally:
+        if log_handler is not None:
+            logging.getLogger().removeHandler(log_handler)
+            log_handler.close()
+
+
+def _main(parser: argparse.ArgumentParser, args) -> int:
+    if args.doctor:
+        return run_doctor(ClaudeCliClient(allow_api_key=args.allow_api_key), allow_api_key=args.allow_api_key, mock=args.mock)
+
+    if not args.prompt:
+        parser.error("un prompt est requis, par exemple : workflow --project-dir . \"Ajoute un tri par date dans l'onglet x\"")
+
+    project_error = validate_project_dir(args)
+    if project_error:
+        print(f"\n❌ {project_error}", file=sys.stderr)
+        if args.json:
+            emit_json(EXIT_ERROR, None, project_error)
         return EXIT_ERROR
 
-    print("\n" + "=" * 70)
-    if report.is_success:
-        print("✅ WORKFLOW TERMINÉ AVEC SUCCÈS")
-    else:
-        print(f"⚠️ WORKFLOW INCOMPLET : {report.error_message}")
-    print("=" * 70)
-    print(f"• Mode effectif    : {'In-Repo (Modifications directes dans le projet)' if report.is_in_repo else 'Standalone (Fichier unique dans output/)'}")
-    print(f"• Type de workflow : {report.workflow_type.value if report.workflow_type else 'N/A'}")
-    print(f"• Développeur       : {report.dev_specialty.value if report.dev_specialty else 'N/A'}")
-    print(f"• Cycles exécutés  : {report.iterations_count}")
-    print(f"• Total étapes     : {len(report.history)}")
-    if report.jev_mode == "mock":
-        print("• Jev              : SIMULATION (validations non fiables)")
-    if report.decisions:
-        print(f"• Décisions Jev    : {len(report.decisions)}")
-        for d in report.decisions:
-            value = f" ({d['value']:.2f})" if isinstance(d.get("value"), (int, float)) else ""
-            mark = {True: "✅", False: "❌"}.get(d["result"], "•") if d["kind"] == "noul" else "•"
-            print(f"    {mark} {d['step']}: {d['result']}{value}")
+    # Échec rapide : sans clé TypeSafe (et sans --mock), on ne démarre pas (les validations ne seraient pas fiables)
+    try:
+        jev_client = JevClient(mock_mode=args.mock)
+    except JevApiError as e:
+        print(f"\n❌ {e}", file=sys.stderr)
+        if args.json:
+            emit_json(EXIT_JEV, None, str(e))
+        return EXIT_JEV
 
-    if report.is_in_repo:
-        print(f"• Dépôt cible      : {report.project_dir}")
-        if report.branch_name:
-            print(f"• Branche de travail: {report.branch_name}")
-        if report.original_branch:
-            print(f"• Branche source   : {report.original_branch}")
-        if report.tests_passed is not None:
-            print(f"• Suite de tests   : {'✅ Succès (Oracle vert)' if report.tests_passed else '❌ Échecs détectés'}")
-        print(f"• Fichiers modifiés: {', '.join(report.modified_files) if report.modified_files else 'Aucun'}")
-        if report.commit_hash:
-            print(f"• Commit Git créé  : [{report.commit_hash}]")
-
-        if report.git_diff:
-            print("\n--- GIT DIFF DES MODIFICATIONS IN-SITU ---")
-            diff_display = report.git_diff[:2500] + ("\n... [tronqué pour affichage]" if len(report.git_diff) > 2500 else "")
-            print(format_colored_diff(diff_display))
-
-        # Bilan de l'isolation Git : l'orchestrateur est déjà revenu sur la branche d'origine
-        # et a restauré le stash ; il ne reste qu'à informer l'utilisateur.
-        if report.is_success and report.merged:
-            print(f"\n✅ Fusion réussie dans '{report.original_branch}' (vous êtes de retour sur cette branche).")
-        elif report.is_success and report.branch_name and report.branch_name != report.original_branch:
-            print("\n" + "-" * 70)
-            print(f"ℹ️ Les modifications validées sont sur la branche '{report.branch_name}' (vous êtes de retour sur '{report.original_branch}').")
-            if report.original_branch and report.original_branch != "HEAD":
-                print(f"  Pour les intégrer : git merge {report.branch_name}")
-            else:
-                print(f"  Pour les intégrer : git merge {report.branch_name} (depuis la branche de votre choix)")
-            print("-" * 70)
-        if report.stash_restored is False:
-            print(
-                "\n⚠️ Vos modifications locales mises en réserve n'ont pas pu être restaurées automatiquement "
-                "(conflit). Elles sont conservées : git stash list, puis git stash pop."
-            )
-
-    else:
-        print("\n--- CODE PRODUIT ---")
-        print(report.code_produit[:600] + ("\n... [tronqué pour affichage]" if len(report.code_produit) > 600 else ""))
-
-    print("\n--- DOCUMENTATION & COMMIT GIT ---")
-    print(report.doc_et_commit)
-
-    if args.workspace:
-        print(f"\n📂 Fichiers persistés dans le dossier : {Path(args.workspace).resolve()}")
-
-    print("=" * 70 + "\n")
-    return EXIT_OK if report.is_success else EXIT_INCOMPLETE
+    if args.json:
+        with contextlib.redirect_stdout(sys.stderr):  # affichage humain sur stderr, JSON seul sur stdout
+            code, report, error = execute(args, jev_client)
+        emit_json(code, report, error)
+        return code
+    code, _report, _error = execute(args, jev_client)
+    return code
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

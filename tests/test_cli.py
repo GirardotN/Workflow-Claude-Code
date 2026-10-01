@@ -14,6 +14,12 @@ from gitrepo import make_repo
 from workflow_claude import cli
 from workflow_claude.clients.claude_cli import ClaudeAuthError, ClaudeCliClient, ClaudeQuotaError
 from workflow_claude.clients.jev_client import JevApiError, JevAuthError, JevClient, JevConfigError
+from workflow_claude.models import WorkflowExecutionReport
+
+
+def ok_report():
+    """Rapport minimal réel (plutôt qu'un Mock) : le résumé du CLI lit de nombreux champs."""
+    return WorkflowExecutionReport(prompt_simple="x", is_success=True, jev_mode="mock")
 
 
 class CliTestCase(unittest.TestCase):
@@ -127,33 +133,22 @@ class TestOptions(CliTestCase):
 
     def test_jev_send_option_reaches_the_orchestrator(self):
         with mock.patch.object(cli, "MultiAgentOrchestrator") as orchestrator:
-            orchestrator.return_value.run.return_value = mock.Mock(
-                is_success=True, is_in_repo=False, workflow_type=None, dev_specialty=None, iterations_count=0,
-                history=[], jev_mode="mock", decisions=[], code_produit="", doc_et_commit="", error_message=None,
-            )
+            orchestrator.return_value.run.return_value = ok_report()
             self.mock_run("--jev-send", "review-only")
         self.assertEqual(orchestrator.call_args.kwargs["jev_send"], "review-only")
 
     def test_doc_edit_flag_reaches_the_orchestrator_and_defaults_to_enabled(self):
-        stub = dict(
-            is_success=True, is_in_repo=False, workflow_type=None, dev_specialty=None, iterations_count=0,
-            history=[], jev_mode="mock", decisions=[], code_produit="", doc_et_commit="", error_message=None,
-        )
         for argv, expected in (((), True), (("--no-doc-edit",), False), (("--doc-edit",), True)):
             with self.subTest(argv=argv):
                 with mock.patch.object(cli, "MultiAgentOrchestrator") as orchestrator:
-                    orchestrator.return_value.run.return_value = mock.Mock(**stub)
+                    orchestrator.return_value.run.return_value = ok_report()
                     _, out, _ = self.mock_run(*argv)
                 self.assertEqual(orchestrator.call_args.kwargs["doc_edit"], expected)
                 self.assertIn("Doc du projet", out)
 
     def test_test_command_and_timeout_reach_the_test_runner(self):
-        stub = dict(
-            is_success=True, is_in_repo=False, workflow_type=None, dev_specialty=None, iterations_count=0,
-            history=[], jev_mode="mock", decisions=[], code_produit="", doc_et_commit="", error_message=None,
-        )
         with mock.patch.object(cli, "MultiAgentOrchestrator") as orchestrator, mock.patch.object(cli, "TestRunner") as runner:
-            orchestrator.return_value.run.return_value = mock.Mock(**stub)
+            orchestrator.return_value.run.return_value = ok_report()
             _, out, _ = self.mock_run("--test-cmd", "make check", "--test-timeout", "42")
         runner.assert_called_once_with(timeout_seconds=42, test_command="make check")
         self.assertIs(orchestrator.call_args.kwargs["test_runner"], runner.return_value)
