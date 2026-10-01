@@ -6,6 +6,8 @@ Ce guide répertorie les situations d'erreur fréquentes, leurs causes exactes e
 
 ## Diagnostics & Solutions Rapides
 
+> **Première étape pour tout problème d'environnement : `workflow --doctor`.** Il vérifie Git (et l'identité), le CLI Claude (version, options requises), la session (`claude auth status`), la présence de clés API payantes et de la clé TypeSafe, sans consommer de quota.
+
 ### 1. Binaire `claude` introuvable
 
 #### Symptôme
@@ -56,6 +58,41 @@ Suivez les instructions dans votre navigateur web. Une fois connecté, relancez 
 
 ---
 
+### 2 bis. Limite d'usage de l'abonnement atteinte
+
+#### Symptôme
+```text
+ClaudeQuotaError: Limite d'usage de l'abonnement Claude atteinte : You've hit your limit · resets 5pm ...
+```
+
+#### Ce qui s'est passé
+Le CLI a signalé `is_error` avec un message de quota. Le workflow s'arrête **immédiatement** (pas de reprise inutile) ; le rollback, le retour sur votre branche et la restauration de votre stash sont faits automatiquement.
+
+#### Solution
+Relancez après l'heure de réinitialisation indiquée dans le message. Pour limiter la consommation : tâches plus petites, `--max-retries` plus bas.
+
+---
+
+### 2 ter. Timeout de l'agent
+
+Symptôme : `ClaudeTimeoutError: Timeout (900s) dépassé ...`. Augmentez `CLAUDE_TIMEOUT_DEV_SECONDS` (développement), `CLAUDE_TIMEOUT_SPEC_SECONDS` (exploration) ou `CLAUDE_TIMEOUT_SECONDS` (revues). Les timeouts ne sont pas repris automatiquement.
+
+---
+
+### 2 quater. Erreurs TypeSafe Jev (code de sortie 4)
+
+| Message | Cause | Solution |
+| :--- | :--- | :--- |
+| `Clé TypeSafe absente …` | `TYPESAFE_API_KEY` absente de `.env` / de l'environnement | Renseignez-la, ou lancez avec `--mock` (simulation, validations non fiables) |
+| `Clé TypeSafe refusée (HTTP 401/403)` | Clé invalide ou révoquée | Vérifiez la clé sur typesafe.ai ; `workflow --doctor` la teste |
+| `TypeSafe Jev indisponible (HTTP 5xx)` / `Erreur de communication …` | Service ou réseau en panne après les reprises | Réessayez plus tard ; le dépôt a été remis en état |
+| `max_tokens_exceeded` | Contexte trop long pour l'API | Baissez `JEV_MAX_STATE_CHARS` ou utilisez `--jev-send review-only` |
+| `Réponse de TypeSafe Jev inattendue` | Format de réponse modifié côté service | Signalez-le : le workflow s'arrête volontairement plutôt que de valider |
+
+Le workflow ne valide **jamais** du code faute de réponse de Jev : il s'arrête.
+
+---
+
 ### 3. Conflit lors de la restauration du Stash (`stash_pop`)
 
 #### Symptôme
@@ -90,7 +127,7 @@ Vous avez modifié manuellement des fichiers sur votre copie de travail pendant 
 #### Symptôme
 ```text
 Circuit breaker : Nombre maximum d'itérations (4) atteint.
-Arrêt forcé à l'étape 'CHECK_QUALITE' pour prévenir une consommation incontrôlée.
+Arrêt forcé avant un nouveau cycle de développement pour prévenir une consommation incontrôlée.
 ```
 
 #### Cause
@@ -98,7 +135,7 @@ Le code produit a été rejeté consécutivement par l'audit Qualité, l'audit S
 
 #### Solution
 1. **Protection du Dépôt :** L'orchestrateur a automatiquement effectué un rollback propre pour ne laisser aucun fichier corrompu sur votre branche.
-2. **Inspection de l'Audit :** Consultez le fichier `./output/WORKFLOW_AUDIT.md` pour lire les motifs précis des rejets formulés par Jev et Claude.
+2. **Inspection de l'Audit :** Consultez `./output/WORKFLOW_AUDIT.md` (statut ÉCHEC, tests encore en échec, décisions de Jev avec leur probabilité, coût par étape), `report.json` pour un traitement automatique, et `FAILED_ATTEMPT.diff` pour la dernière tentative rejetée. Ces fichiers sont écrits même en cas d'échec ou d'erreur.
 3. **Affiner le Prompt :** Précisez votre prompt initial pour réduire les ambiguïtés architecturales ou clarifier les contraintes.
 4. **Augmenter les Tentatives :** Pour les refactorings très lourds, vous pouvez augmenter la limite :
    ```bash
@@ -116,10 +153,13 @@ Aucune suite de tests automatisée détectée dans le projet.
 
 #### Diagnostic
 L'orchestrateur recherche automatiquement :
-- **Node.js :** `package.json` contenant un script `"test"` (autre que le placeholder npm par défaut).
-- **Python :** Répertoire `tests/` ou `test/` contenant des fichiers `.py`, `pytest.ini` ou `setup.cfg`.
-- **Rust :** `Cargo.toml` avec `cargo test`.
-- **Go :** `go.mod` avec `go test ./...`.
+- **Node.js :** `package.json` contenant un script `"test"` (autre que le placeholder npm), lancé avec npm, pnpm, yarn ou bun selon le lockfile.
+- **Python :** dossier `tests/` ou `test/` contenant des `.py`, `pytest.ini`, `conftest.py`, `setup.cfg` ou `[tool.pytest]` ; utilise le **venv du projet** (`.venv`, `venv`, `env`) s'il existe, `pytest` s'il est installé, sinon `unittest`.
+- **.NET :** `*.sln` / `*.csproj` avec `dotnet test` ; **Maven** (`pom.xml`) ; **Gradle** (`build.gradle[.kts]`) ; **Rust** (`cargo test`) ; **Go** (`go test ./...`).
 
 #### Solution
-Si vos tests utilisent une commande non standard ou un chemin spécifique, vous pouvez désactiver la vérification automatique via `--no-tests`, ou créer un script standard dans votre `package.json` ou configuration de test.
+Si vos tests utilisent une commande non standard : indiquez-la avec `--test-cmd "make check"`, `TEST_COMMAND`, ou dans un fichier `.workflow.toml` à la racine du projet (voir [configuration](configuration.md)). `--no-tests` désactive la vérification.
+
+### 5 bis. Les tests dépassent le délai
+
+Symptôme : `TimeoutExpired : les tests ont dépassé le délai imparti`. Augmentez `--test-timeout` (ou `timeout` dans `.workflow.toml`). Le processus de test **et ses enfants** sont tués au timeout.

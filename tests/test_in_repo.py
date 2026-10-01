@@ -5,17 +5,15 @@ la modification chirurgicale in-situ, la revue sur git diff,
 le rollback automatique sur rejet et le commit automatique.
 """
 
-import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from clients.claude_cli import ClaudeCliClient
-from clients.git_client import GitClient
-from clients.jev_client import JevClient
-from models import DevSpecialty, WorkflowType
-from orchestrator import MultiAgentOrchestrator
+from workflow_claude.clients.claude_cli import ClaudeCliClient
+from workflow_claude.clients.git_client import GitClient
+from workflow_claude.clients.jev_client import JevClient
+from workflow_claude.orchestrator import MultiAgentOrchestrator
 
 
 class TestInRepoWorkflow(unittest.TestCase):
@@ -23,12 +21,16 @@ class TestInRepoWorkflow(unittest.TestCase):
     def setUp(self):
         # Création d'un dépôt Git temporaire multi-fichiers
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.repo_path = Path(self.temp_dir.name)
+        # resolve() : l'orchestrateur résout le chemin (macOS /var -> /private/var,
+        # Windows 8.3 RUNNER~1 -> nom long), le test doit comparer des chemins résolus.
+        self.repo_path = Path(self.temp_dir.name).resolve()
 
-        # Initialisation de Git
-        subprocess.run(["git", "init"], cwd=self.repo_path, check=True, capture_output=True)
+        # Initialisation de Git (configuration locale déterministe, indépendante de l'OS)
+        subprocess.run(["git", "init", "-b", "main"], cwd=self.repo_path, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.name", "TestUser"], cwd=self.repo_path, check=True)
         subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=self.repo_path, check=True)
+        subprocess.run(["git", "config", "core.autocrlf", "false"], cwd=self.repo_path, check=True)
+        subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=self.repo_path, check=True)
 
         # Création d'une structure multi-fichiers réaliste (dizaines de composants)
         src_dir = self.repo_path / "src" / "components"
@@ -78,6 +80,7 @@ class TestInRepoWorkflow(unittest.TestCase):
             jev_client=jev,
             project_dir=str(self.repo_path),
             standalone_mode=False,
+            use_branch=False,  # édition directe dans la copie de travail (la branche est testée ailleurs)
             auto_commit=False,
         )
 
@@ -114,6 +117,7 @@ class TestInRepoWorkflow(unittest.TestCase):
             claude_client=claude,
             jev_client=jev,
             project_dir=str(self.repo_path),
+            use_branch=False,
             auto_commit=True,
         )
 
@@ -129,6 +133,33 @@ class TestInRepoWorkflow(unittest.TestCase):
         # Vérifier que le dernier commit dans git log correspond
         head_commit = self.git.get_head_commit()
         self.assertEqual(report.commit_hash, head_commit)
+
+    def test_in_repo_branch_always_commits_and_returns_to_origin(self):
+        """
+        Avec l'isolation par branche, le succès est TOUJOURS committé sur workflow/ai-*
+        (sans --commit) et l'utilisateur est ramené sur sa branche d'origine, arbre propre.
+        """
+        initial_branch = self.git.get_current_branch()
+        initial_head = self.git.get_head_commit()
+
+        orchestrator = MultiAgentOrchestrator(
+            claude_client=ClaudeCliClient(mock_mode=True),
+            jev_client=JevClient(mock_mode=True),
+            project_dir=str(self.repo_path),
+            use_branch=True,
+            auto_commit=False,
+        )
+        report = orchestrator.run("Modifie la fonction de tri dans l'onglet x")
+
+        self.assertTrue(report.is_success)
+        self.assertEqual(self.git.get_current_branch(), initial_branch)
+        self.assertEqual(self.git.get_head_commit(), initial_head)  # la branche d'origine n'a pas bougé
+        self.assertTrue(self.git.is_working_tree_clean())
+
+        self.assertIsNotNone(report.commit_hash)
+        self.assertTrue(report.branch_name.startswith("workflow/ai-"))
+        self.assertEqual(self.git.count_commits_ahead(initial_head, report.branch_name), 1)
+        self.assertFalse(report.merged)
 
     def test_in_repo_rollback_on_rejection(self):
         """
@@ -210,7 +241,7 @@ class TestInRepoWorkflow(unittest.TestCase):
         claude = ClaudeCliClient(mock_mode=True)
         jev = JevClient(mock_mode=True)
 
-        from clients.test_runner import TestResult, TestRunner
+        from workflow_claude.clients.test_runner import TestResult, TestRunner
 
         class MockFailingThenPassingTestRunner(TestRunner):
             def __init__(self):
@@ -319,7 +350,7 @@ class TestInRepoWorkflow(unittest.TestCase):
         claude = ClaudeCliClient(mock_mode=True)
         jev = JevClient(mock_mode=True)
 
-        from clients.test_runner import TestResult, TestRunner
+        from workflow_claude.clients.test_runner import TestResult, TestRunner
 
         class ConstantFailingTestRunner(TestRunner):
             def run_tests(self, project_dir, custom_cmd=None):
@@ -353,7 +384,7 @@ class TestInRepoWorkflow(unittest.TestCase):
         claude = ClaudeCliClient(mock_mode=True)
         jev = JevClient(mock_mode=True)
 
-        from clients.test_runner import TestResult, TestRunner
+        from workflow_claude.clients.test_runner import TestResult, TestRunner
 
         class JitterFailingTestRunner(TestRunner):
             def __init__(self):

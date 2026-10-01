@@ -1,3 +1,9 @@
+# ADR 0000 — Spécification d'origine
+
+> **Statut :** document fondateur conservé tel quel (à titre historique). Il décrit le cahier des charges initial et un prototype ; l'implémentation actuelle s'en écarte (voir `docs/architecture.md`). Les décisions d'architecture postérieures sont consignées dans les ADR suivants de ce dossier.
+
+---
+
 # Spécification Technique & Proposition d'Implémentation : Orchestration Multi-Agents Claude & Jev (TypeSafe)
 
 > **Destinataire :** Agent IA / Assistant au sein de l'IDE.  

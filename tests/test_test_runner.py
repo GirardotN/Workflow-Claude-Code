@@ -3,11 +3,12 @@ Tests unitaires pour le composant TestRunner (détection et exécution des tests
 """
 
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from clients.test_runner import TestResult, TestRunner
+from workflow_claude.clients.test_runner import TestRunner
 
 
 class TestTestRunner(unittest.TestCase):
@@ -59,14 +60,17 @@ class TestTestRunner(unittest.TestCase):
 
     def test_run_tests_success(self):
         """Vérifie l'exécution réussie d'une commande de test."""
-        res = self.runner.run_tests(self.project_path, custom_cmd="python3 -c \"exit(0)\"")
+        res = self.runner.run_tests(self.project_path, custom_cmd=[sys.executable, "-c", "exit(0)"])
         self.assertIsNotNone(res)
         self.assertTrue(res.passed)
         self.assertEqual(res.returncode, 0)
 
     def test_run_tests_failure(self):
         """Vérifie la capture propre d'une commande de test en échec."""
-        res = self.runner.run_tests(self.project_path, custom_cmd="python3 -c \"import sys; sys.stderr.write('AssertionError: expected 1 got 2'); sys.exit(1)\"")
+        res = self.runner.run_tests(
+            self.project_path,
+            custom_cmd=[sys.executable, "-c", "import sys; sys.stderr.write('AssertionError: expected 1 got 2'); sys.exit(1)"],
+        )
         self.assertIsNotNone(res)
         self.assertFalse(res.passed)
         self.assertEqual(res.returncode, 1)

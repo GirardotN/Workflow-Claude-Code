@@ -5,12 +5,11 @@ les modèles assignés, l'isolation des contextes et les boucles de feedback.
 """
 
 import unittest
-from unittest.mock import MagicMock
 
-from clients.claude_cli import ClaudeCliClient
-from clients.jev_client import JevClient
-from models import DevSpecialty, WorkflowType
-from orchestrator import (
+from workflow_claude.clients.claude_cli import ClaudeCliClient
+from workflow_claude.clients.jev_client import JevClient
+from workflow_claude.models import DevSpecialty, WorkflowType
+from workflow_claude.orchestrator import (
     MultiAgentOrchestrator,
     WorkflowMaxRetriesExceeded,
     clean_code_output,
@@ -204,6 +203,32 @@ class TestMultiAgentWorkflow(unittest.TestCase):
         self.assertFalse(report.is_success)
         self.assertEqual(report.iterations_count, 3)
         self.assertIn("Circuit breaker", report.error_message)
+
+    def test_last_allowed_cycle_is_still_reviewed(self):
+        """
+        Régression : le circuit breaker ne doit pas se déclencher AVANT la revue du dernier
+        cycle autorisé. Rejet au cycle 1, validation au cycle 2 avec max_retries=2 => succès.
+        """
+        self.jev.classification_type = WorkflowType.SIMPLE.value
+        self.jev.quality_validations = [False, True]
+        self.orchestrator.max_retries = 2
+
+        report = self.orchestrator.run("Tâche qui réussit au dernier cycle")
+
+        self.assertTrue(report.is_success)
+        self.assertEqual(report.iterations_count, 2)
+        self.assertIn("CHECK_QUALITE_CYCLE_2", [s.step_name for s in report.history])
+
+    def test_single_cycle_workflow_can_succeed(self):
+        """Avec max_retries=1, un premier cycle validé doit aboutir (avant : jamais de succès possible)."""
+        self.jev.classification_type = WorkflowType.SIMPLE.value
+        self.jev.quality_validations = [True]
+        self.orchestrator.max_retries = 1
+
+        report = self.orchestrator.run("Tâche simple en un cycle")
+
+        self.assertTrue(report.is_success)
+        self.assertEqual(report.iterations_count, 1)
 
     def test_circuit_breaker_raise_on_failure(self):
         """

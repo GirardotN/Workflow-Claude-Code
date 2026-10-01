@@ -1,29 +1,88 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=64.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "workflow-claude-code"
-version = "1.0.0"
-description = "Orchestrateur multi-agents Claude & TypeSafe Jev (Zero crédit Claude API)"
+dynamic = ["version"]
+description = "Orchestrateur multi-agents Claude Code CLI & TypeSafe Jev (zéro crédit API Claude)"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-    { name = "Girardot Nicolas", email = "nicolas.girardot@etu.umontpellier.fr" }
+    { name = "Nicolas Girardot", email = "nicolasgirardot60@gmail.com" }
 ]
 requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+]
 dependencies = [
     "requests>=2.28.0",
     "python-dotenv>=1.0.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.6",
+    "pytest>=8.0",
+    "coverage>=7.0",
+    "mypy>=1.10",
+    "types-requests",
+    "pre-commit>=3.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/GirardotN/Workflow-Claude-Code"
+Issues = "https://github.com/GirardotN/Workflow-Claude-Code/issues"
+
 [project.scripts]
-workflow = "cli:main"
-workflow-claude = "cli:main"
+workflow = "workflow_claude.cli:main"
+workflow-claude = "workflow_claude.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "workflow_claude.__version__" }
 
 [tool.setuptools.packages.find]
-include = ["clients*", "ui*"]
-exclude = ["output*", "tests*"]
+where = ["src"]
 
-[tool.setuptools]
-py-modules = ["cli", "config", "models", "orchestrator"]
+[tool.ruff]
+line-length = 140
+target-version = "py310"
+extend-exclude = ["output"]
+
+[tool.ruff.lint]
+# E9 = erreurs de syntaxe, F = pyflakes, I = tri des imports
+select = ["E9", "F", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["workflow_claude"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true
+# Non bloquant en CI pour l'instant (dette de typage à résorber en phase 2)
+files = ["src/workflow_claude"]
+
+[tool.coverage.run]
+source = ["src/workflow_claude"]
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+# Seuil de la CI (mesuré : ~96 %) ; marge pour les branches propres à un système d'exploitation
+fail_under = 90
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

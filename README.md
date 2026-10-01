@@ -1,129 +1,152 @@
 # Workflow-Claude-Code : Orchestrateur Multi-Agents Claude & TypeSafe Jev
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-0078D4?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/GirardotN/Workflow-Claude-Code)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-0078D4?style=for-the-badge&logo=linux&logoColor=white)](docs/windows.md)
 [![CI Status](https://img.shields.io/github/actions/workflow/status/GirardotN/Workflow-Claude-Code/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI%20Matrix)](https://github.com/GirardotN/Workflow-Claude-Code/actions)
 [![Claude Code CLI](https://img.shields.io/badge/Claude_Code-Headless_CLI-6B46C1?style=for-the-badge&logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview)
 [![TypeSafe Jev](https://img.shields.io/badge/TypeSafe-Jev_System_One-00C7B7?style=for-the-badge)](https://typesafe.ai)
-[![Zero Claude API Credits](https://img.shields.io/badge/Claude_API-0_Cr%C3%A9dits_Payants-22c55e?style=for-the-badge&logo=cashapp&logoColor=white)](#-contraintes-fondamentales--z%C3%A9ro-cr%C3%A9dit-api-claude)
+[![Abonnement uniquement](https://img.shields.io/badge/Claude-abonnement_uniquement-22c55e?style=for-the-badge)](docs/under-the-hood.md#3-appels-à-claude--prompt-sur-stdin-environnement-nettoyé-outils-par-rôle)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
-**`Workflow-Claude-Code` est un orchestrateur multi-agents autonome basé sur une Machine à États Finis (FSM) déterministe qui automatise l'intégralité du cycle de conception logicielle : spécification technique, développement in-situ, oracle de tests automatisé, double audit qualité & sécurité, documentation d'ingénierie et commit sémantique.**
+`workflow` confie une tâche de programmation à une **chaîne d'agents Claude** pilotée par une machine à états : spécification, développement dans votre dépôt, tests, double revue (qualité puis sécurité), mise à jour de la documentation et commit. Les décisions « oui/non » (le travail est-il valide ?) et le routage (tâche simple, moyenne ou complexe) sont confiés au service de décision **TypeSafe Jev**, pas à Claude lui-même.
 
-Conçu pour les ingénieurs logiciels exigeants et les équipes produit en entreprise, il réconcilie la puissance générative des modèles de pointe d'Anthropic (**Opus, Sonnet, Haiku**) et la vélocité déterministe du moteur de décision **TypeSafe Jev** (System One / Decide).
-
-Il neutralise définitivement les écueils critiques des agents autonomes conventionnels : **zéro crédit API développeur consommé** grâce à l'exploitation de la session locale Claude CLI (Claude Pro / Max 5x), **zéro perte de données** grâce au mécanisme de sécurité **Stash Guard**, et **zéro hallucination de régression** grâce à un diagnostic initial par **Oracle de Test (Baseline Cycle 0)**.
+> **État : alpha (0.1.x).** La mécanique est testée de bout en bout avec des doubles réalistes (≈ 400 tests, couverture ≈ 96 %), et le client Jev a été validé contre le service réel. Un run complet avec un Claude authentifié reste à faire manuellement : commencez sur un **dépôt jetable** (voir [Limites connues](#limites-connues)).
 
 ---
 
-### Tableau Comparatif Synthétique
+## Ce que l'outil garantit (et où c'est vérifié)
 
-| Dimension Critique | Développement Manuel | Scripts d'Agents Naïfs (LLM Wrapper) | **Workflow-Claude-Code** |
-| :--- | :--- | :--- | :--- |
-| **Coût d'API Claude** | Gratuit (abonnement web) mais chronophage | Facturation exponentielle au token (`ANTHROPIC_API_KEY`) | **0 € de crédits API** (Session locale Claude CLI Max 5x) |
-| **Sécurité du Code Local** | Totale (contrôle humain) | **Élevée** (risque d'écrasement ou destruction par `git clean -fd`) | **Hermétique (Stash Guard)** : `git stash` + `finally: git stash pop` |
-| **Validation des Tests** | Manuelle | Ignorée ou aveugle aux échecs préexistants | **Oracle Baseline (Cycle 0)** avec auto-guérison et normalisation anti-jitter |
-| **Isolation Cognitive** | Dépend de la rigueur du relecteur | Contexte saturé provoquant des biais de confirmation | **Isolation Stricte** : La revue qualité ne voit que le code brut ou le diff |
-| **Vitesse d'Arbitrage** | Lente (attente de review humaine) | Lente (invocations LLM coûteuses pour un oui/non) | **Instantanée & Déterministe** via TypeSafe Jev (classification/probabilité) |
-| **Gestion Multiplateforme** | Manuelle | Souvent bloqué sous Windows (`claude.cmd`, encodage CP1252) | **Universelle** (Linux, macOS, Windows avec `comspec` sécurisé & UTF-8) |
-| **Résilience du Parsing** | N/A | Crashe si du code généré contient des accolades `{}` | **Parseur lexical d'accolades équilibrées** insensible aux imbrications |
-| **Empreinte Système** | N/A | Bloatware lourd (LangChain, autogen, 50+ dépendances) | **Zero Bloatware** : Seulement 2 dépendances légères (`requests`, `dotenv`) |
+| Promesse | Mécanisme | Vérifié par |
+| :--- | :--- | :--- |
+| **Votre travail en cours n'est jamais perdu** | Mise en réserve (`git stash -u`), branche d'isolation `workflow/ai-*`, rollback, retour sur votre branche **puis** restauration du stash — sur succès, échec, erreur, timeout et Ctrl-C | `test_isolation.py`, `test_git_client.py`, `test_edge_cases.py` (vrais dépôts Git) |
+| **Aucune facturation à l'usage par erreur** | `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, Bedrock/Vertex/Foundry sont retirées de l'environnement du sous-processus Claude (sauf `--allow-api-key`) | `test_claude_cli.py` |
+| **Les relecteurs ne voient que le diff** | Les agents qualité, sécurité, feedback et doc n'ont **aucun outil** et tournent dans un répertoire vide | `test_tool_policy.py` |
+| **Une validation n'est jamais un accident** | Jev est *fail-closed* : réponse absente, invalide ou service en panne = arrêt du workflow ; sans clé TypeSafe, refus de démarrer | `test_jev_client.py` (serveur au format réel) |
+| **Les secrets ne partent pas chez un tiers** | Masquage (clés, jetons, mots de passe, JWT, clés privées…) avant envoi à Jev ; `--jev-send review-only` n'envoie aucun code | `test_jev_context.py` |
+| **Un échec de tests préexistant n'est pas une régression** | Comparaison d'**ensembles de tests en échec** avec la baseline initiale | `test_oracle.py` |
+| **La documentation se met à jour sans toucher au code** | Agent doc + garde-fou qui annule tout ce qui n'est pas de la documentation | `test_doc_edit.py` |
+| **Un échec laisse une trace exploitable** | `WORKFLOW_AUDIT.md`, `report.json`, dernière tentative, codes de sortie distincts | `test_cli_ux.py` |
+
+Ces garanties ont des limites ; elles sont détaillées dans [Limites connues](#limites-connues) et [SECURITY.md](SECURITY.md).
 
 ---
 
-## Démarrage Rapide (Quickstart en 3 Minutes)
+## Démarrage rapide
 
-### 1. Prérequis Système
-- **Node.js (v18+)** : Requis pour faire tourner le CLI officiel Claude Code.
-- **Python 3.10 ou supérieur**.
-- **Session Claude active** : Installez et authentifiez votre session Claude Pro / Max 5x :
+### 1. Prérequis
+- **Git**, avec une identité configurée (`git config --global user.name` / `user.email`).
+- **Python 3.10+**.
+- **Node.js 18+** et le CLI officiel, **authentifié avec votre abonnement** :
   ```bash
   npm install -g @anthropic-ai/claude-code
   claude auth login
   ```
+- Une **clé TypeSafe** (`TYPESAFE_API_KEY`) dans un fichier `.env` (modèle : `.env.example`). Sans elle, `workflow` refuse de démarrer ; `--mock` est le seul mode simulation.
 
-> [!NOTE]
-> Une clé API **TypeSafe** pour le modèle Jev est facultative. Si aucune variable `TYPESAFE_API_KEY` n'est configurée, l'orchestrateur active automatiquement son simulateur heuristique local haute performance.
-
----
-
-### 2. Installation Recommandée (Globale via `pipx`)
-
-Grâce au standard **PEP 621** configuré dans `pyproject.toml`, l'application s'installe en commande système universelle isolée :
-
+### 2. Installation
 ```bash
-# 1. Cloner le dépôt officiel
 git clone https://github.com/GirardotN/Workflow-Claude-Code.git
 cd Workflow-Claude-Code
-
-# 2. Installer globalement via pipx en mode éditable
-pipx install --editable .
-
-# 3. La commande est immédiatement disponible partout !
-workflow --help
+pipx install .          # ou : pipx install --editable .   (pour développer)
+workflow --version
+workflow --doctor       # vérifie Git, CLI Claude, session, clé TypeSafe (aucun quota consommé)
 ```
+Sous Windows : voir [docs/windows.md](docs/windows.md).
 
----
-
-### 3. Exemples d'Exécution
+### 3. Premiers pas
 
 ```bash
-# Mode In-Repo : Exploration, modification in-situ et revue sur branche dédiée
+# Mode In-Repo : le projet doit être un dépôt Git (travail sur une branche dédiée, jamais sur la vôtre)
 workflow --project-dir /chemin/vers/mon-projet "Modifie la fonction de tri dans l'onglet x"
 
-# Mode Autonome : Génération d'un fichier neuf dans output/
-workflow --standalone "Créer un service FastAPI d'authentification JWT avec rate limiting Redis"
+# Mode Standalone : génère du code seul (un fichier) dans le dossier de rapports
+workflow --standalone "Crée un service FastAPI d'authentification JWT"
 
-# Mode Simulation Déterministe (sans appel réseau ni CLI)
-workflow --mock "Test de flux"
+# Simulation : sans réseau ni CLI ; validations NON fiables ; aucun fichier du projet modifié
+workflow --mock --standalone "Test de flux"
+
+# Sortie machine (CI) : rapport JSON sur stdout, affichage humain sur stderr
+workflow --json --project-dir . "Ajoute un tri par date" > report.json
 ```
+
+Le prompt est obligatoire. À la fin d'un run In-Repo réussi, les modifications sont **committées sur `workflow/ai-*`** et vous êtes ramené sur votre branche ; l'outil propose la fusion (`--merge` pour la faire automatiquement).
 
 ---
 
-## Flux FSM en Bref
-
-L'orchestrateur évalue le niveau de complexité de la demande après spécification in-situ et applique une séparation stricte des rôles :
+## Fonctionnement
 
 ```mermaid
 flowchart TD
-    Start(["Invite Initiale"]) --> Spec["Spécification In-Situ<br/><i>Sonnet</i>"]
-    Spec --> Jev{"Aiguillage Jev"}
-    Jev -->|"Simple"| DevS["Dev (Sonnet)"] --> TestsS{"Tests"} --> QualS["Qualité (Sonnet)"] --> DocS["Doc & Commit"]
-    Jev -->|"Moyenne"| DevM["Dev (Sonnet)"] --> TestsM{"Tests"} --> QualM["Qualité (Sonnet)"] --> SecuM["Sécurité (Sonnet)"] --> DocM["Doc & Commit"]
-    Jev -->|"Complexe"| DevC["Dev (Opus)"] --> TestsC{"Tests"} --> QualC["Qualité (Opus)"] --> SecuC["Sécurité (Sonnet)"] --> DocC["Doc & Commit"]
+    Start(["Votre demande"]) --> Spec["Spécification<br/><i>Sonnet, lecture seule</i>"]
+    Spec --> Jev{"Routage Jev<br/>complexité + spécialité"}
+    Jev --> Dev["Développement<br/><i>Sonnet, ou Opus si complexe</i>"]
+    Dev --> Tests{"Tests du projet<br/>(oracle + baseline)"}
+    Tests -->|"régression"| Dev
+    Tests --> Qual["Revue qualité<br/><i>aucun outil</i>"]
+    Qual -->|"rejet Jev"| Dev
+    Qual -->|"validé, tâche moyenne ou complexe"| Secu["Revue sécurité<br/><i>aucun outil</i>"]
+    Secu -->|"rejet Jev"| Dev
+    Qual -->|"validé, tâche simple"| Doc
+    Secu -->|"validé"| Doc["Doc & message de commit<br/>+ mise à jour de la doc du projet"]
+    Doc --> Commit(["Commit sur workflow/ai-*,<br/>retour sur votre branche"])
 ```
 
----
+Le détail (matrice des modèles, séquence Git, isolation cognitive) est dans [docs/architecture.md](docs/architecture.md). Un **circuit breaker** (`--max-retries`, 4 par défaut) arrête le workflow après trop d'allers-retours ; dans tous les cas d'échec le dépôt est remis en état.
 
-## Documentation Technique Complète
+### Codes de sortie
 
-Pour explorer tous les détails architecturaux, les guides avancés et la référence d'ingénierie, consultez la documentation modulaire :
-
-| Document | Description |
+| Code | Signification |
 | :--- | :--- |
-| **[Architecture & Modèle Mental](docs/architecture.md)** | Diagrammes Mermaid détaillés (FSM complète, séquence Stash Guard), matrice d'allocation des modèles et isolation cognitive. |
-| **[Guide d'Utilisation Avancé (Cookbooks)](docs/cookbooks.md)** | Cas réels : Refactoring in-situ React/TS avec `git add -N`, correction TDD FastAPI avec auto-réparation, et pipelines CI/CD batch. |
-| **[Référence des Paramètres & Configuration](docs/configuration.md)** | Tableau exhaustif des arguments CLI, variables d'environnement `.env`, configuration JSON et priorité de résolution. |
-| **[Sous le Capot : Ingénierie & Sécurité](docs/under-the-hood.md)** | Analyse technique approfondie : Stash Guard inconditionnel, Oracle Baseline Cycle 0 avec normalisation anti-jitter, sécurisation sous Windows et parseur lexical. |
-| **[Dépannage, FAQ & Diagnostics](docs/troubleshooting.md)** | Diagnostic des erreurs courantes (binaire introuvable, session expirée, conflits de stash, Circuit Breaker). |
+| `0` | Succès |
+| `1` | Erreur inattendue ou précondition non remplie (dépôt sans commit, identité Git absente, `--project-dir` invalide…) |
+| `2` | Workflow terminé **sans succès** (circuit breaker, commit refusé…) — aussi : erreur d'usage des arguments |
+| `3` | Claude : session absente, limite d'usage de l'abonnement atteinte, timeout |
+| `4` | Jev : clé absente ou refusée, service indisponible, réponse invalide |
+| `130` | Interruption (Ctrl-C) |
 
 ---
 
-## Tests Unitaires & Intégration Continue (CI/CD)
+## Limites connues
 
-Le projet intègre une suite de **27 tests unitaires hermétiques** (100 % de succès) validant chaque composant sans dépendance externe :
+- **Pas encore de validation automatisée avec un vrai Claude.** Le client est testé avec un faux binaire `claude` et le CLI réel a été sondé (`--help`, `auth status`, format JSON d'erreur). Faites un premier essai sur un dépôt jetable avant tout projet important.
+- **Jev décide, avec une probabilité.** Le seuil de validation est 0,5 (`JEV_THRESHOLD`) et n'a pas été calibré sur de nombreux runs. Si un relecteur conclut `VERDICT: FAIL` alors que Jev valide, l'incohérence est journalisée (`report.decisions`) mais la décision de Jev s'applique.
+- **Données envoyées à un tiers** : le diff (secrets masqués « au mieux » par expressions régulières) et la revue partent chez TypeSafe. `--jev-send review-only` n'envoie aucun code.
+- **`--allow-bash` n'est pas un bac à sable** : liste blanche de commandes (tests, lecture) ; `pytest` exécute le code de votre projet.
+- **Un run à la fois par dépôt** (branche, stash et index sont partagés). Un sous-module modifié ou un arbre qu'on ne peut pas mettre en réserve est refusé (votre travail n'est pas touché).
+- **Conflit de fusion** : la fusion est abandonnée proprement et la branche `workflow/ai-*` est conservée pour inspection.
+- **Tests du projet cible** : détection de Node (npm/pnpm/yarn/bun), Python, .NET, Maven, Gradle, Rust, Go ; sinon `--test-cmd`.
+- **Mode Standalone** : un seul fichier de code, sans projet ni tests.
+- **Quota** : les tâches complexes utilisent Opus et consomment votre abonnement ; la limite d'usage arrête proprement le workflow (code 3).
+- **Langue** : prompts, logs et documentation sont en français.
+
+---
+
+## Documentation
+
+| Document | Contenu |
+| :--- | :--- |
+| [Architecture](docs/architecture.md) | FSM, séquence Git, matrice des modèles, étape DOC_EDIT |
+| [Configuration](docs/configuration.md) | Options CLI, variables d'environnement, `.workflow.toml`, codes de sortie |
+| [Sous le capot](docs/under-the-hood.md) | Stash Guard, oracle de tests, client Claude, Jev (format réel, fail-closed, masquage) |
+| [Cookbooks](docs/cookbooks.md) | Scénarios d'usage (refactoring, TDD, CI) |
+| [Dépannage](docs/troubleshooting.md) | Erreurs courantes et solutions |
+| [Windows](docs/windows.md) | Installation et particularités sous Windows |
+| [Tests](docs/testing.md) | Organisation, doubles de test, conventions, couverture |
+| [Décisions d'architecture (ADR)](docs/adr/README.md) | Pourquoi CLI `claude -p`, rôle de Jev, isolation par branche, garde-fou de l'agent doc |
+| [Sécurité](SECURITY.md) · [Contribuer](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) | |
+
+---
+
+## Tests et intégration continue
+
 ```bash
-python3 -m unittest discover -s tests -v
+pip install -e ".[dev]"                 # installation éditable requise (le code vit dans src/workflow_claude)
+python -m unittest discover -s tests    # ≈ 400 tests hermétiques, ≈ 2-3 minutes
 ```
-
-### Matrice CI/CD GitHub Actions (`.github/workflows/ci.yml`)
-Chaque commit et pull request est testé sur une matrice **9 environnements** :
-- **Systèmes d'exploitation :** Ubuntu Linux, macOS, Windows
-- **Versions Python :** 3.10, 3.11, 3.12
+La CI (`.github/workflows/ci.yml`) exécute les tests sur **Ubuntu, macOS et Windows × Python 3.10, 3.11, 3.12**, un lint `ruff`, un test d'installation (`pip` et `pipx`) et un contrôle de couverture (seuil 90 %).
 
 ---
 
 ## Licence
 
-Ce projet est distribué sous **Licence MIT**. Consultez le fichier [LICENSE](LICENSE) pour plus de détails.  
-Créé et maintenu par **Nicolas Girardot** (`nicolasgirardot60@gmail.com`).
+Distribué sous **licence MIT** ([LICENSE](LICENSE)). Créé et maintenu par **Nicolas Girardot** (`nicolasgirardot60@gmail.com`).

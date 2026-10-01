@@ -14,9 +14,9 @@ L'architecture s'inspire de la théorie cognitive des processus duaux :
    - **Économie de tokens** : Aucune clé `ANTHROPIC_API_KEY` n'est requise ; le système s'appuie sur la session locale active de l'utilisateur (Claude Pro / Max 5x).
 
 2. **Système Un (Décision Binaire Réflexe & Routage Déterministe)** :
-   - Délégué au moteur décisionnel **TypeSafe Jev** (endpoints `/v1/systemone` et `/v1/decide`).
+   - Délégué au moteur décisionnel **TypeSafe Jev** (endpoint `POST /v1/systemone`, questions de type `choice` et `noul`).
    - Responsable des arbitrages rapides : choix du niveau de complexité, sélection de la spécialité technique du développeur, et validation/rejet binaire (Qualité et Sécurité).
-   - **Avantage** : Latence ultra-faible (< 200 ms), format déterministe (`choice` ou probabilité binaire `noul`/`binary`), et zéro hallucination de complaisance.
+   - **Avantage** : latence faible (≈ 0,5 à 1 s mesuré), sortie structurée (`choice` + confiance, ou probabilité `noul` de répondre « oui »), sans réponse en texte libre. **Garde-fou** : fail-closed — une réponse absente, invalide ou une panne du service arrête le workflow, elle ne vaut jamais « validé ».
 
 ---
 
@@ -38,7 +38,7 @@ flowchart TD
     QualSimple --> JevQualSimple{"Jev : Qualité Validée ?"}
     JevQualSimple -->|"Rejet (Rollback Git)"| FbQualSimple["Feedback Correctif Qualité<br/><i>Modèle : Haiku</i>"]
     FbQualSimple --> DevSimple
-    JevQualSimple -->|"Validé"| DocSimple["Doc & Commit Git<br/><i>Modèle : Sonnet</i>"]
+    JevQualSimple -->|"Validé"| DocSimple["Doc, mise à jour de la doc du projet &amp; Commit Git<br/><i>Modèle : Sonnet</i>"]
 
     %% Branche Moyenne
     JevRoute -->|"Tâche Moyenne"| DevMoy["Dev Moyen<br/><i>Modèle : Sonnet</i>"]
@@ -53,7 +53,7 @@ flowchart TD
     SecuMoy --> JevSecuMoy{"Jev : Sécurité Validée ?"}
     JevSecuMoy -->|"Rejet (Rollback Git)"| FbSecuMoy["Feedback Correctif Sécu<br/><i>Modèle : Haiku</i>"]
     FbSecuMoy --> DevMoy
-    JevSecuMoy -->|"Validé"| DocMoy["Doc & Commit Git<br/><i>Modèle : Haiku</i>"]
+    JevSecuMoy -->|"Validé"| DocMoy["Doc, mise à jour de la doc du projet &amp; Commit Git<br/><i>Modèle : Haiku</i>"]
 
     %% Branche Complexe
     JevRoute -->|"Tâche Complexe"| DevComp["Dev Complexe<br/><i>Modèle : Opus</i>"]
@@ -68,7 +68,7 @@ flowchart TD
     SecuComp --> JevSecuComp{"Jev : Sécurité Validée ?"}
     JevSecuComp -->|"Rejet (Rollback Git)"| FbSecuComp["Feedback Correctif Sécu<br/><i>Modèle : Sonnet</i>"]
     FbSecuComp --> DevComp
-    JevSecuComp -->|"Validé"| DocComp["Doc & Commit Git<br/><i>Modèle : Haiku</i>"]
+    JevSecuComp -->|"Validé"| DocComp["Doc, mise à jour de la doc du projet &amp; Commit Git<br/><i>Modèle : Haiku</i>"]
 
     DocSimple --> OutputSuccess(["Succès : Commit, Merge & Artefacts ./output"])
     DocMoy --> OutputSuccess
@@ -121,7 +121,7 @@ sequenceDiagram
             FSM->>Jev: Validation déterministe (validate)
             alt Rejet Jev
                 Jev-->>FSM: Rejet binaire
-                FSM->>SG: git rollback (git restore . + git clean -fd)
+                FSM->>SG: git rollback (git reset --hard HEAD + git clean -fd)
                 Note over FSM,WT: Code défaillant supprimé sans risque
             else Validation Jev
                 Jev-->>FSM: Accord de conformité
@@ -129,14 +129,15 @@ sequenceDiagram
         end
     end
 
-    FSM->>SG: git commit -m "feat(scope): ..."
-    FSM->>Dev: Invite interactive de fusion (git merge)
+    FSM->>SG: git commit sur la branche workflow/ai-* (systématique)
+    FSM->>Dev: Décision de fusion (--merge, invite interactive ou refus)
+    FSM->>SG: Retour sur la branche d'origine (+ git merge --no-ff si accepté)
 
-    Note over FSM,WT: Bloc inconditionnel finally:
+    Note over FSM,WT: Sortie garantie (succès, échec, exception, Ctrl-C) par IsolatedRun :<br/>rollback si non validé, retour sur la branche d'origine, PUIS stash pop
     opt Stash initialement créé
         FSM->>SG: git stash pop
         SG->>WT: Restauration des fichiers modifiés de l'utilisateur
-        Note over Dev,WT: Travail en cours restauré à 100 %
+        Note over Dev,WT: Travail en cours restauré (ou conservé dans le stash en cas de conflit)
     end
 ```
 
@@ -149,16 +150,17 @@ L'orchestrateur adapte la puissance du modèle à l'effort cognitif de chaque ph
 | Étape / Rôle | Tâche Simple | Tâche Moyenne | Tâche Complexe | Justification Cognitive & Économique |
 | :--- | :--- | :--- | :--- | :--- |
 | **1. Spécification Technique** | **Sonnet** | **Sonnet** | **Sonnet** | Vision architecturale équilibrée et cartographie du codebase. |
-| **2. Aiguillage & Rôle Dev** | **Jev** (`choice`) | **Jev** (`choice`) | **Jev** (`choice`) | Déterministe, instantané (< 200 ms), zéro coût de token. |
+| **2. Aiguillage & Rôle Dev** | **Jev** (`choice`) | **Jev** (`choice`) | **Jev** (`choice`) | Sortie structurée, rapide (≈ 0,5 à 1 s), aucun token Claude consommé. |
 | **3. Agent de Développement** | **Sonnet** | **Sonnet** | **Opus** | Sonnet pour les tâches directes ; Opus pour les tâches complexes. |
 | **4. Oracle de Test** | `TestRunner` | `TestRunner` | `TestRunner` | Exécution native hermétique (`pytest`, `npm`, `cargo`, `go`). |
 | **5. Audit Bug & Qualité** | **Sonnet** | **Sonnet** | **Opus** | Rigueur critique ; Opus est intransigeant sur les architectures lourdes. |
-| **6. Décision Qualité** | **Jev** (`noul`) | **Jev** (`noul`) | **Jev** (`noul`) | Arbitrage binaire probabiliste impartial. |
+| **6. Décision Qualité** | **Jev** (`noul`) | **Jev** (`noul`) | **Jev** (`noul`) | Arbitrage binaire probabiliste : `noul` ≥ seuil (0,5 par défaut) = validé. |
 | **7. Synthèse Feedback Qualité** | **Haiku** | **Haiku** | **Sonnet** | Puces d'action concises sans surcharge de contexte. |
 | **8. Audit Cyber-Sécurité** | *(Non exécuté)* | **Sonnet** | **Sonnet** | Analyse OWASP Top 10, injections, gestion des secrets. |
 | **9. Décision Sécurité** | *(Non exécuté)* | **Jev** (`noul`) | **Jev** (`noul`) | Tolérance zéro aux failles logiques ou d'injection. |
 | **10. Synthèse Feedback Sécu** | *(Non exécuté)* | **Haiku** | **Sonnet** | Directives correctives impératives. |
 | **11. Documentation & Commit** | **Sonnet** | **Haiku** | **Haiku** | Formatage sémantique et commit conventionnel standardisé. |
+| **12. Mise à jour de la doc du projet** *(DOC_EDIT, mode In-Repo)* | **Sonnet** | **Haiku** | **Haiku** | Met à jour README / CHANGELOG / docs/ dans le même commit ; tout ce qui n'est pas de la documentation est annulé (`doc_guard.py`). |
 
 ---
 
@@ -168,3 +170,13 @@ Pour prévenir les biais de confirmation et l'explosion de la fenêtre de contex
 - **L'Agent Qualité** ne reçoit **que** le code brut ou le `git diff`. Il n'a aucun accès au prompt de spécification initial ni à l'identité du développeur, ce qui garantit une relecture neutre et impartiale.
 - **L'Agent Sécurité** reçoit **le code source ET la review qualité** préalable pour identifier les vecteurs d'attaque potentiels.
 - **Les Retours Correctifs** sont reformulés sous forme de listes à puces concises sans réinjecter l'intégralité des échanges passés.
+
+---
+
+## Étape DOC_EDIT (mode In-Repo)
+
+Après la validation par Jev, un agent doté d'outils d'édition (jamais de Bash) met à jour la documentation **existante** du projet : README, CHANGELOG, fichiers `*.md` / `*.rst` / `*.adoc` et dossier `docs/`.
+
+- **Garde-fou** : un instantané du dépôt est pris avant l'agent ; ensuite `doc_guard.enforce` annule tout ce qui n'est pas un fichier de documentation (code, configuration, tests, suppressions) et remet en l'état tout fichier du développeur que l'agent aurait modifié. Le code validé reste donc intact.
+- **Au mieux** : une erreur de l'agent doc (timeout, quota) ne remet pas en cause le code validé ; ce qui a été écrit avant l'échec est conservé s'il s'agit de documentation.
+- **Résultat** : la documentation est commitée avec le code ; `report.doc_diff` / `DOC_CHANGES.diff` en isolent le diff. `--no-doc-edit` (ou `DOC_EDIT=0`) désactive l'étape. Rien n'est fait si le développeur n'a rien modifié.
