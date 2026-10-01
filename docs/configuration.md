@@ -23,7 +23,7 @@ Ligne de Commande (CLI)
 ```text
 usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT_DIR]
                 [--standalone] [--commit] [--branch] [--no-branch] [--merge]
-                [--allow-bash] [--allow-api-key] [--jev-send {full,review-only}] [--doctor] [--run-tests] [--no-tests] [-y] [--workspace WORKSPACE] [-v]
+                [--allow-bash] [--allow-api-key] [--jev-send {full,review-only}] [--doctor] [--run-tests] [--no-tests] [--test-cmd COMMANDE] [--test-timeout SECONDES] [-y] [--workspace WORKSPACE] [-v]
                 [prompt]
 ```
 
@@ -42,6 +42,8 @@ usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT
 | `--allow-api-key` | `flag` | `False` | Laisse passer `ANTHROPIC_API_KEY` & co au CLI Claude (**facturation à l'usage**). Par défaut elles sont retirées pour n'utiliser que l'abonnement. |
 | `--doc-edit` / `--no-doc-edit` | `flag` | `--doc-edit` | Mode In-Repo : agent de documentation du projet (README, CHANGELOG, docs/) dans le même commit ; toute modification hors documentation est annulée. |
 | `--jev-send` | `full` \| `review-only` | `full` | Données envoyées au service tiers TypeSafe pour les validations (voir [SECURITY](../SECURITY.md)). |
+| `--test-cmd` | `string` | *(auto)* | Commande de test du projet, remplace la détection automatique (sinon `TEST_COMMAND`, puis `.workflow.toml`). |
+| `--test-timeout` | `int` | `300` | Délai maximum de la suite de tests ; l'arbre de processus est tué au-delà. |
 | `--doctor` | `flag` | — | Vérifie l'environnement (git, CLI Claude, options, session, clés) sans consommer de quota, puis quitte (code 1 si point bloquant). |
 | `--run-tests` | `flag` | `True` | Exécute automatiquement la suite de tests du projet hôte comme oracle de validation déterministe. |
 | `--no-tests` | `flag` | — | Désactive l'exécution des tests du projet hôte. |
@@ -73,12 +75,29 @@ Copiez le fichier [.env.example](../.env.example) vers `.env` dans le **réperto
 | `CLAUDE_MAX_RETRIES` | `int` | `2` | Reprises sur erreur transitoire de Claude (surcharge serveur, 5xx). Jamais pour un quota ou une session expirée. |
 | `DOC_EDIT` | `0` ou `1` | `1` | Mode In-Repo : un agent met à jour la doc existante du projet (hors code, garde-fou). Équivalent de `--doc-edit` / `--no-doc-edit`. |
 | `MAX_DIFF_CHARS` | `int` | `150000` | Plafond (caractères) du diff/code inséré dans les prompts des agents (troncature au milieu, signalée). |
+| `TEST_COMMAND` | `string` | *(auto)* | Commande de test imposée à tous les projets (équivalent de `--test-cmd`). |
+| `TEST_TIMEOUT_SECONDS` | `int` | `300` | Délai maximum de la suite de tests du projet. |
+| `MAX_TEST_OUTPUT_CHARS` | `int` | `8000` | Taille maximale de la sortie de tests conservée (début et fin). |
 | `ALLOW_API_KEY` | `0` ou `1` | `0` | Équivalent de `--allow-api-key`. |
 | `MAX_WORKFLOW_RETRIES` | `int` | `4` | Nombre d'itérations autorisées avant déclenchement du Circuit Breaker. |
 | `ALLOW_BASH` | `0` ou `1` | `0` | Autoriser ou interdire l'outil Bash pour l'agent de dev. |
 | `USE_BRANCH` | `0` ou `1` | `1` | Isoler le travail sur une branche dédiée `workflow/ai-*`. |
 | `RUN_TESTS` | `0` ou `1` | `1` | Exécuter la suite de tests du projet hôte comme oracle. |
 | `MOCK_SERVICES` | `0` ou `1` | `0` | Forcer le mode simulation globale par défaut. |
+
+---
+
+## Configuration par projet (`.workflow.toml`)
+
+Placez ce fichier à la racine du projet **cible** pour fixer sa commande de test :
+
+```toml
+[tests]
+command = "pytest -x -q tests/unit"
+timeout = 600
+```
+
+Priorité : `--test-cmd` > `TEST_COMMAND` > `.workflow.toml` > détection automatique.
 
 ---
 

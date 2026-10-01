@@ -167,6 +167,17 @@ def python_has_module(python: str, module: str, timeout: int = 20) -> bool:
         return False
 
 
+def split_command(command: str) -> List[str]:
+    """
+    Découpe une commande en arguments. Sous Windows, `shlex` en mode non-POSIX (qui préserve les backslashes
+    des chemins) CONSERVE les guillemets dans les jetons : on les retire pour obtenir des arguments exploitables.
+    """
+    if os.name != "nt":
+        return shlex.split(command)
+    tokens = shlex.split(command, posix=False)
+    return [tok[1:-1] if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in "\"'" else tok for tok in tokens]
+
+
 def _kill_process_tree(proc: subprocess.Popen) -> None:
     """Tue le processus ET ses descendants (npm/pytest/dotnet lancent des enfants qui survivraient sinon)."""
     try:
@@ -277,7 +288,7 @@ class TestRunner:
 
     @staticmethod
     def _has_dotnet_project(project_dir: Path) -> bool:
-        for pattern in ("*.sln", "*.csproj", "*/*.csproj"):
+        for pattern in ("*.sln", "*.csproj", "*/*.csproj", "*/*/*.csproj"):
             if any(project_dir.glob(pattern)):
                 return True
         return False
@@ -288,7 +299,7 @@ class TestRunner:
         for source in (custom_cmd, self.test_command, read_project_config(project_dir).get("command")):
             if source:
                 if isinstance(source, str):
-                    return shlex.split(source, posix=(os.name != "nt"))
+                    return split_command(source)
                 return list(source)
         return self.detect_test_command(project_dir)
 

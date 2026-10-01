@@ -147,6 +147,18 @@ class TestOptions(CliTestCase):
                 self.assertEqual(orchestrator.call_args.kwargs["doc_edit"], expected)
                 self.assertIn("Doc du projet", out)
 
+    def test_test_command_and_timeout_reach_the_test_runner(self):
+        stub = dict(
+            is_success=True, is_in_repo=False, workflow_type=None, dev_specialty=None, iterations_count=0,
+            history=[], jev_mode="mock", decisions=[], code_produit="", doc_et_commit="", error_message=None,
+        )
+        with mock.patch.object(cli, "MultiAgentOrchestrator") as orchestrator, mock.patch.object(cli, "TestRunner") as runner:
+            orchestrator.return_value.run.return_value = mock.Mock(**stub)
+            _, out, _ = self.mock_run("--test-cmd", "make check", "--test-timeout", "42")
+        runner.assert_called_once_with(timeout_seconds=42, test_command="make check")
+        self.assertIs(orchestrator.call_args.kwargs["test_runner"], runner.return_value)
+        self.assertIn("Commande de test : make check", out)
+
     def test_invalid_jev_send_value_is_rejected_by_argparse(self):
         with contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit) as ctx:

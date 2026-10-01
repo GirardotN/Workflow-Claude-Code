@@ -31,27 +31,23 @@ Si le développeur avait des modifications en cours non enregistrées sur son ar
 
 ---
 
-## 2. Oracle Baseline (Cycle 0) & Normalisation Anti-Jitter
+## 2. Oracle de tests : baseline par ensembles de tests en échec
 
-### Le Problème
-1. **Échecs Préexistants :** Dans les bases de code réelles, certains tests de la suite peuvent déjà échouer avant l'intervention de l'IA. Si l'orchestrateur considérait aveuglément tout échec de test comme une régression, l'agent entrerait dans une boucle infinie de correction sur du code non sollicité.
-2. **Jitter Temporel :** Les frameworks modernes (`pytest`, `jest`, `cargo test`) affichent des métriques de temps variables d'une exécution à l'autre (ex: `passed in 0.42s` vs `passed in 0.45s`). Une comparaison stricte de chaînes de caractères échouerait faussement.
+### Le problème
+1. **Échecs préexistants** : si l'orchestrateur considérait tout échec comme une régression, l'agent bouclerait sur du code non sollicité.
+2. **Bruit** : temps d'exécution, adresses mémoire, chemins temporaires, ordre des tests changent d'une exécution à l'autre. Comparer la sortie texte brute produit des fausses régressions (ou masque des vraies).
 
-### L'Implémentation
-1. **Diagnostic Initial (Cycle 0) :**  
-   Avant de modifier un seul fichier, l'orchestrateur exécute la commande de test détectée (`TestRunner.run_tests()`) et snapshotte le résultat (`baseline_tests_passed` et `baseline_output`).
-2. **Normalisation Déterministe :**  
-   La fonction `normalize_test_output()` expurge toutes les variations temporelles et les pourcentages de progression :
-   ```python
-   def normalize_test_output(output: str) -> str:
-       # Supprime les indications de millisecondes et secondes (ex: '45ms', '0.42s')
-       cleaned = re.sub(r"\b\d+(\.\d+)?\s*(s|ms|seconds?)\b", "", output, flags=re.IGNORECASE)
-       cleaned = re.sub(r"\(duration:\s*\d+(\.\d+)?s\)", "", cleaned, flags=re.IGNORECASE)
-       cleaned = re.sub(r"(\[|\()\s*\d+%\s*(\]|\))", "", cleaned)
-       return re.sub(r"\s+", " ", cleaned).strip()
-   ```
-3. **Différenciation de Régression :**  
-   Si la suite de tests échoue après édition mais que la sortie normalisée correspond exactement à la baseline initiale, l'orchestrateur en déduit qu'il s'agit d'un problème préexistant et n'interrompt pas le flux.
+### L'implémentation
+1. **Baseline (cycle 0)** : avant de toucher au code, la suite est exécutée ; les **identifiants des tests en échec** sont extraits de la sortie (pytest, unittest, jest, vitest, go, cargo, dotnet).
+2. **Régression = un test échoue qui n'échouait pas dans la baseline** (`is_regression`). Mêmes échecs avec un texte différent : pas une régression. Moins d'échecs : pas une régression. Si les identifiants sont illisibles (crash, erreur de compilation), repli sur la comparaison de la sortie normalisée (temps, pourcentages et espaces neutralisés).
+3. **Nettoyage** : les fichiers non suivis créés par les tests (caches, rapports) sont supprimés avant le diff et le commit.
+4. **Dernier cycle** : si le circuit breaker s'arrête alors que les tests échouent encore, le message d'erreur l'indique avec les premiers tests concernés (`report.tests_failed`).
+
+### Exécution robuste
+- **Commande** (par priorité) : `--test-cmd` / `TEST_COMMAND` → `.workflow.toml` du projet (`[tests]` `command`, `timeout`) → détection automatique : Node (npm / pnpm / yarn / bun d'après le lockfile), Python (**venv du projet** s'il existe, `pytest` si importable, sinon `unittest`), .NET, Maven, Gradle (wrappers du projet), Rust, Go. Le raccourci `python3` du Microsoft Store n'est jamais utilisé.
+- **Sans terminal** : stdin fermé (un mode « watch » ne peut pas bloquer), `CI=true`, `NO_COLOR=1`, `PYTHONDONTWRITEBYTECODE=1`, codes ANSI retirés de la sortie.
+- **Timeout** (`--test-timeout`, `TEST_TIMEOUT_SECONDS`, 300 s par défaut ou `timeout` de `.workflow.toml`) : tout l'**arbre de processus** est tué (`taskkill /T` sous Windows, groupe de processus sous POSIX), pas seulement le parent.
+- **Sortie** plafonnée à `MAX_TEST_OUTPUT_CHARS` (début et fin conservés) ; la liste des tests en échec est extraite avant la troncature.
 
 ---
 

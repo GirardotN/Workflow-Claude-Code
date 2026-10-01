@@ -17,6 +17,10 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - Spécification d'origine déplacée vers `docs/adr/0000-spec-origine.md`.
 
 ### Corrigé
+- **Baseline des tests fiable** : la régression est détectée par comparaison des **ensembles de tests en échec** (extraits de pytest, unittest, jest, vitest, go, cargo, dotnet) et non plus du texte brut de la sortie (sensible aux temps, adresses mémoire, chemins temporaires).
+- Le timeout des tests tue **tout l'arbre de processus** (avant : seul le parent, les enfants survivaient) ; stdin fermé et `CI=true` : plus de test bloqué en mode « watch ».
+- Sous Windows, une commande de test donnée en chaîne conservait ses guillemets et ne se lançait pas ; le raccourci `python3` du Microsoft Store n'est plus utilisé.
+- Circuit breaker : le message mentionne les tests encore en échec au dernier cycle.
 - **Jev : toutes les validations passaient.** Le client lisait `results.<clé>.probability` alors que l'API renvoie `answers.<clé>.noul` ; la valeur par défaut (1.0) validait tout, et le repli sur `/v1/decide` (endpoint inexistant, 404) ne fonctionnait jamais. Le client suit maintenant le format réel, vérifié contre le service.
 - **Fail-closed** : réponse absente/invalide ou service en panne → `JevApiError` (code de sortie 4), jamais de validation par défaut ; reprises sur erreur réseau/429/5xx.
 - Sans clé TypeSafe, le client ne bascule plus silencieusement en simulation : refus de démarrer (sauf `--mock`).
@@ -34,6 +38,9 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - `TestRunner.run_tests` : `custom_cmd` accepte une liste d'arguments ; découpage non-POSIX sous Windows.
 
 ### Ajouté
+- `--test-cmd` / `TEST_COMMAND`, `--test-timeout` / `TEST_TIMEOUT_SECONDS`, `MAX_TEST_OUTPUT_CHARS` et fichier `.workflow.toml` par projet (`[tests] command`, `timeout`).
+- Détection des tests : pnpm / yarn / bun (lockfile), venv Python du projet, .NET, Maven, Gradle (+ wrappers).
+- `report.baseline_tests_failed` et `report.tests_failed`.
 - **Agent doc (`DOC_EDIT`, mode In-Repo)** : met à jour la documentation existante du projet (README, CHANGELOG, `*.md`/`*.rst`/`*.adoc`, `docs/`) dans le même commit que le code. `doc_guard.py` annule ensuite toute modification hors documentation (code, config, tests, suppressions) et protège le code validé ; une panne de l'agent ne remet jamais en cause le code validé. `--no-doc-edit` / `DOC_EDIT=0` pour le couper ; `DOC_CHANGES.diff` séparé du patch de code.
 - `policy.py` (`ModelPolicy`, matrice des modèles, testée contre le tableau de `docs/architecture.md`), `prompts.py` (tous les gabarits + consignes par spécialité via `--append-system-prompt`), `fsm.py` (moteur unique + backends), `clients/mocks.py`, `text_utils.py`.
 - Contrôle de contexte : diff relu sans lockfiles/fichiers générés (`package-lock.json`, `dist/`, `*.min.js`…, avec mention des fichiers exclus), plafond `MAX_DIFF_CHARS` (150 000) dans les prompts, coût/tours/session de chaque appel Claude dans les métadonnées des étapes (`report.cost_usd`).

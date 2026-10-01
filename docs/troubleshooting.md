@@ -153,10 +153,13 @@ Aucune suite de tests automatisée détectée dans le projet.
 
 #### Diagnostic
 L'orchestrateur recherche automatiquement :
-- **Node.js :** `package.json` contenant un script `"test"` (autre que le placeholder npm par défaut).
-- **Python :** Répertoire `tests/` ou `test/` contenant des fichiers `.py`, `pytest.ini` ou `setup.cfg`.
-- **Rust :** `Cargo.toml` avec `cargo test`.
-- **Go :** `go.mod` avec `go test ./...`.
+- **Node.js :** `package.json` contenant un script `"test"` (autre que le placeholder npm), lancé avec npm, pnpm, yarn ou bun selon le lockfile.
+- **Python :** dossier `tests/` ou `test/` contenant des `.py`, `pytest.ini`, `conftest.py`, `setup.cfg` ou `[tool.pytest]` ; utilise le **venv du projet** (`.venv`, `venv`, `env`) s'il existe, `pytest` s'il est installé, sinon `unittest`.
+- **.NET :** `*.sln` / `*.csproj` avec `dotnet test` ; **Maven** (`pom.xml`) ; **Gradle** (`build.gradle[.kts]`) ; **Rust** (`cargo test`) ; **Go** (`go test ./...`).
 
 #### Solution
-Si vos tests utilisent une commande non standard ou un chemin spécifique, vous pouvez désactiver la vérification automatique via `--no-tests`, ou créer un script standard dans votre `package.json` ou configuration de test.
+Si vos tests utilisent une commande non standard : indiquez-la avec `--test-cmd "make check"`, `TEST_COMMAND`, ou dans un fichier `.workflow.toml` à la racine du projet (voir [configuration](configuration.md)). `--no-tests` désactive la vérification.
+
+### 5 bis. Les tests dépassent le délai
+
+Symptôme : `TimeoutExpired : les tests ont dépassé le délai imparti`. Augmentez `--test-timeout` (ou `timeout` dans `.workflow.toml`). Le processus de test **et ses enfants** sont tués au timeout.
