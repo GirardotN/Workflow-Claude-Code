@@ -33,6 +33,10 @@ Ces garanties ont des limites ; elles sont détaillées dans [Limites connues](#
 
 ## Démarrage rapide
 
+> **Première fois ?** Suivez le tutoriel pas à pas : **[docs/getting-started.md](docs/getting-started.md)** (10 minutes, sur un dépôt jetable, avec les résultats attendus). Les termes techniques sont expliqués dans le [glossaire](docs/glossaire.md).
+
+**Qu'est-ce que Jev ?** Un service externe ([typesafe.ai](https://typesafe.ai)) qui répond « oui/non » (avec une probabilité) à la question « ce travail est-il valide ? » et classe la complexité des tâches. Il faut y créer un compte pour obtenir une clé API.
+
 ### 1. Prérequis
 - **Git**, avec une identité configurée (`git config --global user.name` / `user.email`).
 - **Python 3.10+**.
@@ -41,7 +45,7 @@ Ces garanties ont des limites ; elles sont détaillées dans [Limites connues](#
   npm install -g @anthropic-ai/claude-code
   claude auth login
   ```
-- Une **clé TypeSafe** (`TYPESAFE_API_KEY`) dans un fichier `.env` (modèle : `.env.example`). Sans elle, `workflow` refuse de démarrer ; `--mock` est le seul mode simulation.
+- Une **clé TypeSafe** (`TYPESAFE_API_KEY`) : créez-la sur [typesafe.ai](https://typesafe.ai), puis placez-la dans `~/.config/workflow-claude/.env` (Windows : `%USERPROFILE%\.config\workflow-claude\.env`) en copiant `.env.example` — ou dans un `.env` du dossier courant, ou en variable d'environnement. Sans elle, `workflow` refuse de démarrer ; `--mock` est le seul mode simulation.
 
 ### 2. Installation
 ```bash
@@ -49,7 +53,8 @@ git clone https://github.com/GirardotN/Workflow-Claude-Code.git
 cd Workflow-Claude-Code
 pipx install .          # ou : pipx install --editable .   (pour développer)
 workflow --version
-workflow --doctor       # vérifie Git, CLI Claude, session, clé TypeSafe (aucun quota consommé)
+mkdir -p ~/.config/workflow-claude && cp .env.example ~/.config/workflow-claude/.env   # puis éditez la clé
+workflow --doctor       # vérifie Git, CLI Claude, session, clé TypeSafe (aucun quota Claude consommé)
 ```
 Sous Windows : voir [docs/windows.md](docs/windows.md).
 
@@ -125,6 +130,8 @@ Le détail (matrice des modèles, séquence Git, isolation cognitive) est dans [
 
 | Document | Contenu |
 | :--- | :--- |
+| **[Prise en main (10 min)](docs/getting-started.md)** | Premier run pas à pas sur un dépôt jetable, avec les résultats attendus |
+| [Glossaire](docs/glossaire.md) | Jev, baseline, stash, circuit breaker, isolation… en clair |
 | [Architecture](docs/architecture.md) | FSM, séquence Git, matrice des modèles, étape DOC_EDIT |
 | [Configuration](docs/configuration.md) | Options CLI, variables d'environnement, `.workflow.toml`, codes de sortie |
 | [Sous le capot](docs/under-the-hood.md) | Stash Guard, oracle de tests, client Claude, Jev (format réel, fail-closed, masquage) |

@@ -107,7 +107,8 @@ class JevClient:
 
         if not self.mock_mode and _is_placeholder(self.api_key):
             raise JevConfigError(
-                "Clé TypeSafe absente : définissez TYPESAFE_API_KEY (fichier .env ou variable d'environnement), "
+                "Clé TypeSafe absente : définissez TYPESAFE_API_KEY dans ~/.config/workflow-claude/.env (configuration globale), "
+                "dans un fichier .env du dossier courant, ou comme variable d'environnement (voir docs/getting-started.md), "
                 "ou lancez avec --mock pour une simulation (validations NON fiables)."
             )
 
