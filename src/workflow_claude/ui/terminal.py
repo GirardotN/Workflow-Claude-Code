@@ -35,13 +35,41 @@ def _safe_print(text: str) -> None:
         print(text.encode(encoding, errors="replace").decode(encoding), flush=True)
 
 
+_color_enabled = True
+
+
+def set_color_enabled(enabled: bool) -> None:
+    """Active/désactive globalement couleurs et animations (option --no-color)."""
+    global _color_enabled
+    _color_enabled = enabled
+
+
+def _enable_windows_vt() -> bool:
+    """Active le traitement des séquences ANSI de la console Windows (conhost) ; False si impossible."""
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        mode = ctypes.c_ulong()
+        if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return False
+        return bool(kernel32.SetConsoleMode(handle, mode.value | 0x0004))  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+    except Exception:
+        return False
+
+
 def is_ansi_supported() -> bool:
-    """Détecte si la sortie standard supporte les codes d'échappement ANSI."""
+    """Détecte si la sortie standard supporte les codes d'échappement ANSI (et si les couleurs sont permises)."""
+    if not _color_enabled or "NO_COLOR" in os.environ:
+        return False
     if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
         return False
     if os.name == "nt":
-        # Windows 10+ avec WT_SESSION ou ConEmu ou ANSICON
-        return "WT_SESSION" in os.environ or "ANSICON" in os.environ or os.environ.get("TERM") == "xterm"
+        # Windows Terminal, ConEmu, ANSICON, sinon tentative d'activation du mode VT de la console
+        if "WT_SESSION" in os.environ or "ANSICON" in os.environ or os.environ.get("TERM") == "xterm":
+            return True
+        return _enable_windows_vt()
     return True
 
 

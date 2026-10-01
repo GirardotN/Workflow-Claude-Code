@@ -207,6 +207,31 @@ class GitClient:
         except Exception:
             return []
 
+    def is_ignored(self, relative_path: str) -> bool:
+        """Vrai si git ignorerait ce chemin (gitignore, exclude local...)."""
+        return self._run_git_proc(["check-ignore", "-q", "--", relative_path]).returncode == 0
+
+    def exclude_locally(self, relative_dir: str) -> bool:
+        """
+        Ajoute `/<dossier>/` à `.git/info/exclude` (exclusion locale, jamais versionnée) pour que les rapports
+        écrits dans le dépôt ne polluent pas `git status`. Retourne True si une ligne a été ajoutée.
+        """
+        relative_dir = relative_dir.strip("/\\")
+        if not relative_dir or self.is_ignored(f"{relative_dir}/.workflow-probe"):
+            return False
+        git_path = self._run_git(["rev-parse", "--git-path", "info/exclude"], check=False)
+        if not git_path:
+            return False
+        exclude_file = Path(git_path) if Path(git_path).is_absolute() else self.root / git_path
+        exclude_file.parent.mkdir(parents=True, exist_ok=True)
+        existing = exclude_file.read_text(encoding="utf-8") if exclude_file.is_file() else ""
+        line = f"/{relative_dir}/"
+        if line in existing.splitlines():
+            return False
+        with open(exclude_file, "a", encoding="utf-8", newline="\n") as f:
+            f.write(("\n" if existing and not existing.endswith("\n") else "") + line + "\n")
+        return True
+
     def get_modified_files(self) -> List[str]:
         """Retourne la liste des chemins de fichiers modifiés ou ajoutés."""
         return [path for _status, path in self.status_entries()]

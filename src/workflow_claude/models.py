@@ -4,7 +4,7 @@ Modèles de données, structures typées et énumérations pour l'orchestrateur 
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -99,4 +99,37 @@ class WorkflowExecutionReport:
     jev_mode: str = ""                            # "live" (TypeSafe) ou "mock" (simulation, validations NON fiables)
     decisions: List[dict] = field(default_factory=list)  # décisions Jev : étape, résultat, probabilité, latence, tokens
     stash_restored: Optional[bool] = None         # None = aucun stash créé ; False = conflit (stash conservé)
+
+    # Champs textuels volumineux (spécification, code, revues, diff, sorties) : exclus du résumé par défaut
+    _TEXT_FIELDS = (
+        "spec_complexe", "code_produit", "review_qualite", "review_securite", "doc_et_commit",
+        "git_diff", "tests_output", "doc_diff",
+    )
+
+    def to_dict(self, include_texts: bool = False) -> dict:
+        """
+        Représentation sérialisable en JSON du rapport. Par défaut sans les textes volumineux ni le contenu des
+        prompts/sorties des étapes (qui peuvent contenir du code ou des secrets) : durées, modèles, coûts et
+        décisions suffisent à l'audit.
+        """
+        data = {}
+        for f in fields(self):
+            value = getattr(self, f.name)
+            if f.name in self._TEXT_FIELDS and not include_texts:
+                continue
+            if f.name == "history":
+                value = [
+                    {
+                        "step_name": s.step_name,
+                        "model": s.model,
+                        "duration_seconds": round(s.duration_seconds, 3),
+                        "metadata": s.metadata,
+                        **({"prompt_sent": s.prompt_sent, "output_received": s.output_received} if include_texts else {}),
+                    }
+                    for s in value
+                ]
+            elif isinstance(value, Enum):
+                value = value.value
+            data[f.name] = value
+        return data
 
