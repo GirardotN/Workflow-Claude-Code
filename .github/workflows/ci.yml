@@ -112,9 +112,11 @@ jobs:
         run: |
           python -m pip install pipx
           pipx install --force .
+          PIPX_BIN="$(pipx environment --value PIPX_BIN_DIR)"
+          echo "pipx bin dir: $PIPX_BIN"
           cd "$RUNNER_TEMP"
-          "$HOME/.local/bin/workflow" --version
-          "$HOME/.local/bin/workflow" --mock --standalone "pipx smoke test"
+          "$PIPX_BIN/workflow" --version
+          "$PIPX_BIN/workflow" --mock --standalone "pipx smoke test"
 
   coverage:
     name: Coverage (threshold from pyproject.toml)
