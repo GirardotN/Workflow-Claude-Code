@@ -43,6 +43,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - `TestRunner.run_tests` : `custom_cmd` accepte une liste d'arguments ; découpage non-POSIX sous Windows.
 
 ### Ajouté
+- **Documentation pour débutants** : `docs/getting-started.md` (premier run en 10 minutes sur un dépôt jetable, avec résultats réels), `docs/glossaire.md`, démarrage rapide du README complété (où créer le `.env`, qu'est-ce que Jev, comment obtenir la clé) ; le message d'erreur « clé TypeSafe absente » indique désormais où la placer ; `.env.example` complété.
 - `docs/windows.md` et quatre ADR : CLI `claude -p` (0001), rôle de Jev en fail-closed (0002), isolation Git par branche + stash (0003), agent doc encadré par un garde-fou a posteriori (0004), avec index `docs/adr/README.md`.
 - **Couverture de tests mesurée en CI (≈ 96 %, seuil 90 %)**, test d'installation `pipx` et `workflow --version` sur le paquet installé ; `docs/testing.md`.
 - Tests de cas limites Git de bout en bout : sous-modules (propre : fonctionne ; modifié : refus propre sans toucher à votre travail), branche d'origine qui avance pendant le run (fusion sans conflit ; fusion en conflit : aucune fusion à moitié faite, branche conservée).

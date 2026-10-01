@@ -38,7 +38,7 @@ usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT
 | `--branch` | `flag` | `True` | Isole le travail sur une branche dédiée `workflow/ai-<timestamp>` pour préserver la branche active. |
 | `--no-branch` | `flag` | — | Désactive la création de branche d'isolation et applique les changements directement sur la branche active. |
 | `--merge` | `flag` | `False` | Fusionne automatiquement la branche d'isolation dans la branche source en fin de cycle validé. |
-| `--allow-bash` | `flag` | `False` | Autorise l'outil Bash pour l'agent de développement, **restreint à une liste blanche** (tests, lecture ; git modifiant l'état, `rm`, `curl`, `sudo` interdits — voir [under-the-hood](under-the-hood.md)). |
+| `--allow-bash` / `--no-allow-bash` | `flag` | `False` | Autorise l'outil Bash pour l'agent de développement, **restreint à une liste blanche** (tests, lecture ; git modifiant l'état, `rm`, `curl`, `sudo` interdits — voir [under-the-hood](under-the-hood.md)). |
 | `--allow-api-key` | `flag` | `False` | Laisse passer `ANTHROPIC_API_KEY` & co au CLI Claude (**facturation à l'usage**). Par défaut elles sont retirées pour n'utiliser que l'abonnement. |
 | `--doc-edit` / `--no-doc-edit` | `flag` | `--doc-edit` | Mode In-Repo : agent de documentation du projet (README, CHANGELOG, docs/) dans le même commit ; toute modification hors documentation est annulée. |
 | `--jev-send` | `full` \| `review-only` | `full` | Données envoyées au service tiers TypeSafe pour les validations (voir [SECURITY](../SECURITY.md)). |
@@ -49,7 +49,7 @@ usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT
 | `--no-color` | `flag` | — | Désactive couleurs et animations (la variable `NO_COLOR` est aussi respectée). |
 | `--version` | `flag` | — | Affiche la version et quitte. |
 | `--doctor` | `flag` | — | Vérifie l'environnement (git, CLI Claude, options, session, clés) sans consommer de quota, puis quitte (code 1 si point bloquant). |
-| `--run-tests` | `flag` | `True` | Exécute automatiquement la suite de tests du projet hôte comme oracle de validation déterministe. |
+| `--run-tests` / `--no-tests` (= `--no-run-tests`) | `flag` | `True` | Exécute automatiquement la suite de tests du projet hôte comme oracle de validation déterministe. |
 | `--no-tests` | `flag` | — | Désactive l'exécution des tests du projet hôte. |
 | `-y`, `--yes` | `flag` | `False` | Valide automatiquement les confirmations interactives (fusion de branche, retour sur branche source). |
 | `--mock` | `flag` | `False` | Exécute la machine à états en simulation complète (zéro appel réseau TypeSafe et zéro appel CLI Claude). |
