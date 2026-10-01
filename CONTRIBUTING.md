@@ -18,7 +18,8 @@ L'installation éditable est **obligatoire** : les tests importent le package `w
 ## Commandes utiles
 
 ```bash
-python -m unittest discover -s tests -v   # suite de tests (hermétique, tout en mock)
+python -m unittest discover -s tests -v   # suite de tests (hermétique, ~400 tests, 2-3 minutes)
+coverage run -m unittest discover -s tests && coverage report   # couverture (seuil CI : 90 %)
 ruff check .                              # lint (même commande qu'en CI)
 ruff check --fix .                        # corrige notamment le tri des imports
 mypy                                      # typage (informatif pour l'instant)
@@ -41,6 +42,7 @@ docs/               guides et ADR (docs/adr/)
 
 ## Conventions
 
+- Tests : voir [docs/testing.md](docs/testing.md) (doubles de test, conventions, vérification par mutation).
 - Code, docstrings, logs et prompts en **français** ; identifiants existants conservés.
 - Imports **relatifs** à l'intérieur du package (`from .clients.git_client import GitClient`) ; les tests importent `workflow_claude.…`.
 - Aucun appel réseau ni CLI `claude` dans les tests : utiliser `mock_mode=True` ou des doubles.

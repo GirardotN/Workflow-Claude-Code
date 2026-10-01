@@ -17,6 +17,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - Spécification d'origine déplacée vers `docs/adr/0000-spec-origine.md`.
 
 ### Corrigé
+- Les commandes de diagnostic du client Claude (`--version`, `--help`, `auth status`) ne lisent plus l'entrée standard du processus parent.
 - **`workflow` sans argument lançait un vrai run** avec un prompt de démonstration : le prompt est maintenant obligatoire (aide d'usage sinon).
 - **`--project-dir` introuvable ou non Git passait silencieusement en Standalone** : erreur explicite (code 1) ; la bannière annonce le mode réellement utilisé quand l'option est absente.
 - **Les rapports sont écrits dans tous les cas** (succès, échec, exception, Ctrl-C) et APRÈS la remise en état du dépôt : avant, rien n'était écrit en cas d'échec alors que la doc y renvoyait ; un dossier de rapports situé dans le dépôt pouvait être effacé par le rollback (`git clean`) ou polluer `git status` : il est maintenant exclu localement (`.git/info/exclude`).
@@ -41,6 +42,9 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - `TestRunner.run_tests` : `custom_cmd` accepte une liste d'arguments ; découpage non-POSIX sous Windows.
 
 ### Ajouté
+- **Couverture de tests mesurée en CI (≈ 96 %, seuil 90 %)**, test d'installation `pipx` et `workflow --version` sur le paquet installé ; `docs/testing.md`.
+- Tests de cas limites Git de bout en bout : sous-modules (propre : fonctionne ; modifié : refus propre sans toucher à votre travail), branche d'origine qui avance pendant le run (fusion sans conflit ; fusion en conflit : aucune fusion à moitié faite, branche conservée).
+- Tests d'infrastructure : configuration, terminal, diagnostics du client Claude, cas d'erreur Git, chemins d'échec de l'isolation.
 - CLI : `--version`, `--json` (rapport JSON sur stdout, affichage humain sur stderr), `--log-file`, `--no-color` (+ `NO_COLOR`), formes `--no-branch` / `--no-allow-bash` / `--no-run-tests` / `--no-doc-edit` (`BooleanOptionalAction`) ; activation des séquences ANSI de la console Windows.
 - `report.json` (durées, modèles, coûts, décisions Jev, tests ; sans contenu de prompts) et `WORKFLOW_AUDIT.md` enrichi (statut, tests baseline/dernier cycle, décisions Jev, coût par étape, branche, fusion, alerte de stash non restauré) ; `WorkflowExecutionReport.to_dict()`.
 - `--test-cmd` / `TEST_COMMAND`, `--test-timeout` / `TEST_TIMEOUT_SECONDS`, `MAX_TEST_OUTPUT_CHARS` et fichier `.workflow.toml` par projet (`[tests] command`, `timeout`).

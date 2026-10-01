@@ -71,3 +71,18 @@ ignore_missing_imports = true
 warn_unused_ignores = true
 # Non bloquant en CI pour l'instant (dette de typage à résorber en phase 2)
 files = ["src/workflow_claude"]
+
+[tool.coverage.run]
+source = ["src/workflow_claude"]
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+# Seuil de la CI (mesuré : ~96 %) ; marge pour les branches propres à un système d'exploitation
+fail_under = 90
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
