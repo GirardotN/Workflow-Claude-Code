@@ -17,6 +17,9 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - Spécification d'origine déplacée vers `docs/adr/0000-spec-origine.md`.
 
 ### Corrigé
+- **`workflow` sans argument lançait un vrai run** avec un prompt de démonstration : le prompt est maintenant obligatoire (aide d'usage sinon).
+- **`--project-dir` introuvable ou non Git passait silencieusement en Standalone** : erreur explicite (code 1) ; la bannière annonce le mode réellement utilisé quand l'option est absente.
+- **Les rapports sont écrits dans tous les cas** (succès, échec, exception, Ctrl-C) et APRÈS la remise en état du dépôt : avant, rien n'était écrit en cas d'échec alors que la doc y renvoyait ; un dossier de rapports situé dans le dépôt pouvait être effacé par le rollback (`git clean`) ou polluer `git status` : il est maintenant exclu localement (`.git/info/exclude`).
 - **Baseline des tests fiable** : la régression est détectée par comparaison des **ensembles de tests en échec** (extraits de pytest, unittest, jest, vitest, go, cargo, dotnet) et non plus du texte brut de la sortie (sensible aux temps, adresses mémoire, chemins temporaires).
 - Le timeout des tests tue **tout l'arbre de processus** (avant : seul le parent, les enfants survivaient) ; stdin fermé et `CI=true` : plus de test bloqué en mode « watch ».
 - Sous Windows, une commande de test donnée en chaîne conservait ses guillemets et ne se lançait pas ; le raccourci `python3` du Microsoft Store n'est plus utilisé.
@@ -38,6 +41,8 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Le 
 - `TestRunner.run_tests` : `custom_cmd` accepte une liste d'arguments ; découpage non-POSIX sous Windows.
 
 ### Ajouté
+- CLI : `--version`, `--json` (rapport JSON sur stdout, affichage humain sur stderr), `--log-file`, `--no-color` (+ `NO_COLOR`), formes `--no-branch` / `--no-allow-bash` / `--no-run-tests` / `--no-doc-edit` (`BooleanOptionalAction`) ; activation des séquences ANSI de la console Windows.
+- `report.json` (durées, modèles, coûts, décisions Jev, tests ; sans contenu de prompts) et `WORKFLOW_AUDIT.md` enrichi (statut, tests baseline/dernier cycle, décisions Jev, coût par étape, branche, fusion, alerte de stash non restauré) ; `WorkflowExecutionReport.to_dict()`.
 - `--test-cmd` / `TEST_COMMAND`, `--test-timeout` / `TEST_TIMEOUT_SECONDS`, `MAX_TEST_OUTPUT_CHARS` et fichier `.workflow.toml` par projet (`[tests] command`, `timeout`).
 - Détection des tests : pnpm / yarn / bun (lockfile), venv Python du projet, .NET, Maven, Gradle (+ wrappers).
 - `report.baseline_tests_failed` et `report.tests_failed`.

@@ -31,8 +31,8 @@ usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT
 
 | Option | Type | Valeur par défaut | Description & Cas d'Usage |
 | :--- | :--- | :--- | :--- |
-| `prompt` | `string` | *(Prompt démo)* | Demande exprimée en langage naturel décrivant la tâche de refactoring ou de développement. |
-| `--project-dir` | `path` | `None` (auto `.`) | Répertoire du projet cible. Active automatiquement le mode **In-Repo** si le dossier est un dépôt Git valide. |
+| `prompt` | `string` | *(obligatoire)* | Tâche en langage naturel. Obligatoire (sauf avec `--doctor` / `--version`) : `workflow` sans argument affiche l'aide d'usage au lieu de lancer un run. |
+| `--project-dir` | `path` | `None` (auto `.`) | Répertoire du projet cible. Doit être un **dépôt Git** : un dossier introuvable ou non Git est une erreur (code 1) au lieu d'un passage silencieux en Standalone ; utilisez `--standalone` pour générer sans projet. Sans l'option : le dossier courant s'il est un dépôt Git, sinon Standalone (annoncé dans la bannière). |
 | `--standalone` | `flag` | `False` | Force la génération d'un fichier source unique et autonome dans `./output` sans altérer le projet hôte. |
 | `--commit` | `flag` | `False` | Avec `--no-branch` : crée le commit conventionnel sur la branche active. **Sans effet avec l'isolation par branche** (défaut), où le succès est toujours committé sur `workflow/ai-*`. |
 | `--branch` | `flag` | `True` | Isole le travail sur une branche dédiée `workflow/ai-<timestamp>` pour préserver la branche active. |
@@ -44,13 +44,17 @@ usage: workflow [-h] [--mock] [--max-retries MAX_RETRIES] [--project-dir PROJECT
 | `--jev-send` | `full` \| `review-only` | `full` | Données envoyées au service tiers TypeSafe pour les validations (voir [SECURITY](../SECURITY.md)). |
 | `--test-cmd` | `string` | *(auto)* | Commande de test du projet, remplace la détection automatique (sinon `TEST_COMMAND`, puis `.workflow.toml`). |
 | `--test-timeout` | `int` | `300` | Délai maximum de la suite de tests ; l'arbre de processus est tué au-delà. |
+| `--json` | `flag` | — | Sortie machine : le rapport JSON (sans contenu de prompts) est écrit sur **stdout**, tout l'affichage humain passe sur stderr. En cas d'erreur : `{"is_success": false, "error_message": ..., "exit_code": N}`. |
+| `--log-file FICHIER` | `path` | — | Écrit aussi les logs détaillés (DEBUG) dans ce fichier. |
+| `--no-color` | `flag` | — | Désactive couleurs et animations (la variable `NO_COLOR` est aussi respectée). |
+| `--version` | `flag` | — | Affiche la version et quitte. |
 | `--doctor` | `flag` | — | Vérifie l'environnement (git, CLI Claude, options, session, clés) sans consommer de quota, puis quitte (code 1 si point bloquant). |
 | `--run-tests` | `flag` | `True` | Exécute automatiquement la suite de tests du projet hôte comme oracle de validation déterministe. |
 | `--no-tests` | `flag` | — | Désactive l'exécution des tests du projet hôte. |
 | `-y`, `--yes` | `flag` | `False` | Valide automatiquement les confirmations interactives (fusion de branche, retour sur branche source). |
 | `--mock` | `flag` | `False` | Exécute la machine à états en simulation complète (zéro appel réseau TypeSafe et zéro appel CLI Claude). |
 | `--max-retries` | `int` | `4` | Nombre maximum de cycles de correction en cas de rejet par les tests ou par l'audit (Circuit Breaker). |
-| `--workspace` | `path` | `./output` | Répertoire où persister les artefacts générés (`LATEST_PATCH.diff`, documentation, rapport d'audit). |
+| `--workspace` | `path` | `./output` | Répertoire des rapports, écrits **dans tous les cas (succès, échec, erreur, Ctrl-C)** : `WORKFLOW_AUDIT.md` (statut, tests, décisions Jev, étapes, coûts), `report.json`, `LATEST_PATCH.diff` (ou `FAILED_ATTEMPT.diff` / `rejected_solution.*` en cas d'échec), `DOC_CHANGES.diff`, `GENERATED_DOC.md`. S'il est dans le dépôt cible, il est exclu localement de git (`.git/info/exclude`). |
 | `-v`, `--verbose` | `flag` | `False` | Active les journaux d'exécution détaillés (niveau `DEBUG`) avec horodatage dans la console. |
 
 ---
@@ -112,7 +116,7 @@ Priorité : `--test-cmd` > `TEST_COMMAND` > `.workflow.toml` > détection automa
 | `4` | TypeSafe Jev : clé absente ou refusée, service indisponible, réponse invalide |
 | `130` | Interruption (Ctrl-C) |
 
-Dans tous les cas d'échec, le dépôt est remis dans son état d'origine et vos modifications en cours sont restaurées.
+Dans tous les cas d'échec, le dépôt est remis dans son état d'origine et vos modifications en cours sont restaurées. Les erreurs d'usage des arguments (prompt manquant, option invalide) renvoient `2`, comme le veut argparse.
 
 ---
 

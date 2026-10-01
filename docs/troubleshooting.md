@@ -135,7 +135,7 @@ Le code produit a été rejeté consécutivement par l'audit Qualité, l'audit S
 
 #### Solution
 1. **Protection du Dépôt :** L'orchestrateur a automatiquement effectué un rollback propre pour ne laisser aucun fichier corrompu sur votre branche.
-2. **Inspection de l'Audit :** Consultez le fichier `./output/WORKFLOW_AUDIT.md` pour lire les motifs précis des rejets formulés par Jev et Claude.
+2. **Inspection de l'Audit :** Consultez `./output/WORKFLOW_AUDIT.md` (statut ÉCHEC, tests encore en échec, décisions de Jev avec leur probabilité, coût par étape), `report.json` pour un traitement automatique, et `FAILED_ATTEMPT.diff` pour la dernière tentative rejetée. Ces fichiers sont écrits même en cas d'échec ou d'erreur.
 3. **Affiner le Prompt :** Précisez votre prompt initial pour réduire les ambiguïtés architecturales ou clarifier les contraintes.
 4. **Augmenter les Tentatives :** Pour les refactorings très lourds, vous pouvez augmenter la limite :
    ```bash

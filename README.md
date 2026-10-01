@@ -76,8 +76,14 @@ workflow --project-dir /chemin/vers/mon-projet "Modifie la fonction de tri dans 
 # Mode Autonome : Génération d'un fichier neuf dans output/
 workflow --standalone "Créer un service FastAPI d'authentification JWT avec rate limiting Redis"
 
-# Mode Simulation Déterministe (sans appel réseau ni CLI)
-workflow --mock "Test de flux"
+# Mode Simulation (sans appel réseau ni CLI ; validations NON fiables, aucun fichier du projet modifié)
+workflow --mock --standalone "Test de flux"
+
+# Sortie machine (CI) : rapport JSON sur stdout, affichage humain sur stderr
+workflow --json --project-dir . "Ajoute un tri par date" > report.json
+
+# Vérifier l'environnement sans consommer de quota
+workflow --doctor
 ```
 
 ---
